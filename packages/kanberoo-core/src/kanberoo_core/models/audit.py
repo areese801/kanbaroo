@@ -11,7 +11,7 @@ from sqlalchemy import Enum, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kanberoo_core.db import Base, new_id
-from kanberoo_core.enums import ActorType, AuditEntityType
+from kanberoo_core.enums import ActorType, AuditEntityType, enum_values
 from kanberoo_core.time import utc_now_iso
 
 
@@ -47,6 +47,7 @@ class AuditEvent(Base):
             native_enum=False,
             name="audit_actor_type",
             create_constraint=True,
+            values_callable=enum_values,
         ),
         nullable=False,
     )
@@ -57,6 +58,7 @@ class AuditEvent(Base):
             native_enum=False,
             name="audit_entity_type",
             create_constraint=True,
+            values_callable=enum_values,
         ),
         nullable=False,
     )

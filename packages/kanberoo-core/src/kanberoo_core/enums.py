@@ -9,6 +9,19 @@ that appear in the spec and in the API.
 from enum import StrEnum
 
 
+def enum_values[E: StrEnum](enum_cls: type[E]) -> list[str]:
+    """
+    Return the ``.value`` of every member of ``enum_cls``.
+
+    Suitable for the SQLAlchemy ``Enum(..., values_callable=...)``
+    argument. Without this, SQLAlchemy defaults to storing the enum
+    ``name`` (e.g. ``HUMAN``), but the spec, migration CHECK
+    constraints, and all external readers use the lowercase ``.value``
+    form (e.g. ``human``).
+    """
+    return [member.value for member in enum_cls]
+
+
 class ActorType(StrEnum):
     """
     Type of actor performing a mutation.

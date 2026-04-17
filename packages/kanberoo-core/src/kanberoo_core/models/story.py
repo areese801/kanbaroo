@@ -11,7 +11,7 @@ from sqlalchemy import Enum, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kanberoo_core.db import Base, new_id
-from kanberoo_core.enums import ActorType, StoryPriority, StoryState
+from kanberoo_core.enums import ActorType, StoryPriority, StoryState, enum_values
 from kanberoo_core.models.base import (
     SoftDeleteMixin,
     TimestampMixin,
@@ -70,12 +70,19 @@ class Story(Base, TimestampMixin, SoftDeleteMixin, VersionMixin):
             native_enum=False,
             name="story_priority",
             create_constraint=True,
+            values_callable=enum_values,
         ),
         nullable=False,
         default=StoryPriority.NONE,
     )
     state: Mapped[StoryState] = mapped_column(
-        Enum(StoryState, native_enum=False, name="story_state", create_constraint=True),
+        Enum(
+            StoryState,
+            native_enum=False,
+            name="story_state",
+            create_constraint=True,
+            values_callable=enum_values,
+        ),
         nullable=False,
         default=StoryState.BACKLOG,
     )
@@ -85,6 +92,7 @@ class Story(Base, TimestampMixin, SoftDeleteMixin, VersionMixin):
             native_enum=False,
             name="story_state_actor_type",
             create_constraint=True,
+            values_callable=enum_values,
         ),
         nullable=True,
     )

@@ -11,7 +11,7 @@ from sqlalchemy import Enum, Index, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kanberoo_core.db import Base, new_id
-from kanberoo_core.enums import LinkEndpointType, LinkType
+from kanberoo_core.enums import LinkEndpointType, LinkType, enum_values
 from kanberoo_core.models.base import SoftDeleteMixin
 from kanberoo_core.time import utc_now_iso
 
@@ -56,6 +56,7 @@ class Linkage(Base, SoftDeleteMixin):
             native_enum=False,
             name="linkage_source_type",
             create_constraint=True,
+            values_callable=enum_values,
         ),
         nullable=False,
     )
@@ -66,12 +67,19 @@ class Linkage(Base, SoftDeleteMixin):
             native_enum=False,
             name="linkage_target_type",
             create_constraint=True,
+            values_callable=enum_values,
         ),
         nullable=False,
     )
     target_id: Mapped[str] = mapped_column(String, nullable=False)
     link_type: Mapped[LinkType] = mapped_column(
-        Enum(LinkType, native_enum=False, name="link_type", create_constraint=True),
+        Enum(
+            LinkType,
+            native_enum=False,
+            name="link_type",
+            create_constraint=True,
+            values_callable=enum_values,
+        ),
         nullable=False,
     )
     created_at: Mapped[str] = mapped_column(String, nullable=False, default=utc_now_iso)
