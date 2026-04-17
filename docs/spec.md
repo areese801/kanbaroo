@@ -2,7 +2,7 @@
 
 > A kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP layer. Designed to be useful to humans on its own, and to integrate tightly with trusty-cage for AI-driven workflows.
 
-**Status:** Draft 1. Input to phase one implementation.
+**Status:** Draft 2. Phase 1 open questions resolved 2026-04-17; ready for implementation.
 
 ---
 
@@ -152,7 +152,8 @@ This is a first-class design constraint, not an afterthought:
 - The database schema is **public** and versioned via Alembic. External tools can read tables directly.
 - For SQLite, the `.db` file is portable and mountable. DuckDB reads it via the `sqlite` extension; Snowflake can ingest it as a file.
 - For Postgres, a read-only role is part of the standard deploy. External services use that role directly.
-- The API exposes an `/export` endpoint that dumps the database to a compressed archive (Parquet files per table, plus a schema version manifest).
+- The API exposes an `/export` endpoint that dumps the database to a compressed archive containing Parquet files per table (for analytic consumers), a raw SQLite file copy (for easy restore), and a schema version manifest.
+- A separate `kb backup` CLI command produces a timestamped copy of the raw SQLite file for local snapshotting. See section 7.2.
 - Soft-deleted rows are visible to direct readers (with a `deleted_at` column). The API hides them by default; raw readers see everything.
 
 ---
@@ -191,8 +192,7 @@ CREATE TABLE workspaces (
     key             TEXT NOT NULL UNIQUE,       -- Short prefix, e.g. "KAN"
     name            TEXT NOT NULL,
     description     TEXT,                        -- Markdown
-    next_story_num  INTEGER NOT NULL DEFAULT 1, -- Monotonic counter for KAN-1, KAN-2...
-    next_epic_num   INTEGER NOT NULL DEFAULT 1, -- Separate counter for EP-style IDs if desired (TBD)
+    next_issue_num  INTEGER NOT NULL DEFAULT 1, -- Monotonic counter shared by stories and epics: KAN-1, KAN-2...
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
     deleted_at      TEXT,
@@ -211,7 +211,7 @@ CREATE TABLE workspace_repos (
 CREATE TABLE epics (
     id              TEXT PRIMARY KEY,
     workspace_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    human_id        TEXT NOT NULL UNIQUE,       -- e.g. "KAN-E-1" or just shares story numbering, see open Q
+    human_id        TEXT NOT NULL UNIQUE,       -- e.g. "KAN-3"; drawn from workspaces.next_issue_num (shared with stories)
     title           TEXT NOT NULL,
     description     TEXT,                        -- Markdown
     state           TEXT NOT NULL DEFAULT 'open', -- open | closed
@@ -225,7 +225,7 @@ CREATE TABLE stories (
     id              TEXT PRIMARY KEY,            -- UUID v7
     workspace_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     epic_id         TEXT REFERENCES epics(id) ON DELETE SET NULL,  -- Nullable: epic is optional
-    human_id        TEXT NOT NULL UNIQUE,        -- e.g. "KAN-123"
+    human_id        TEXT NOT NULL UNIQUE,        -- e.g. "KAN-123"; drawn from workspaces.next_issue_num (shared with epics)
     title           TEXT NOT NULL,
     description     TEXT,                         -- Markdown
     priority        TEXT NOT NULL DEFAULT 'none', -- none | low | medium | high
@@ -331,7 +331,7 @@ CREATE TABLE api_tokens (
 ### 3.4 Key Schema Conventions
 
 - **IDs**: All primary keys are UUID v7 stored as TEXT (monotonic, sortable, database-portable).
-- **Human IDs**: Stories and epics have a separate `human_id` column like `KAN-123`. Generated atomically on insert via the workspace's counter column.
+- **Human IDs**: Stories and epics share a single monotonic counter per workspace (`workspaces.next_issue_num`), yielding IDs like `KAN-1`, `KAN-2`, etc. with no type prefix. A given number identifies a unique entity regardless of type; issue type is determined by which table the row lives in. Generated atomically on insert. This leaves room for a future "change issue type" operation (see section 9.5) that preserves the human ID across the conversion.
 - **Timestamps**: Stored as ISO 8601 TEXT (e.g. `2026-04-17T15:30:00Z`). Trivial to parse in every language, no timezone ambiguity.
 - **Soft delete**: Every mutable entity has `deleted_at`. Null means alive. API hides deleted rows by default.
 - **Versioning**: Every mutable entity has a `version` integer. Incremented on every update. Used for ETag and If-Match concurrency.
@@ -591,7 +591,7 @@ kb workspace show KAN
 # Stories (the most-used surface)
 kb story list --workspace KAN --state in_progress
 kb story show KAN-123
-kb story create --workspace KAN --title "Thing" --priority high --epic KAN-E-4
+kb story create --workspace KAN --title "Thing" --priority high --epic KAN-4
 kb story edit KAN-123                     # Opens $EDITOR with markdown body
 kb story move KAN-123 in_progress
 kb story comment KAN-123 "Looks good"
@@ -605,9 +605,10 @@ kb epic create --workspace KAN --title "v2 redesign"
 kb tag list --workspace KAN
 kb tag create --workspace KAN bug --color "#cc3333"
 
-# Audit & export
+# Audit, export, backup
 kb audit KAN-123
-kb export --workspace KAN --output ./snapshot/
+kb export --workspace KAN --output ./snapshot/       # Parquet + SQLite archive via /export endpoint
+kb backup --output ~/.kanberoo/backups/              # Timestamped raw SQLite file copy; local-only, no server round-trip
 
 # Tokens
 kb token list
@@ -661,7 +662,7 @@ Each phase is broken into PR-sized chunks that Claude Code can work through sequ
 7. **Audit event emission**. Wired into every mutation at the service layer (not endpoint layer) so it can't be bypassed.
 8. **WebSocket event stream**. Server-side pub-sub, event publishing on every mutation, client protocol.
 9. **CLI: workspace + story basics**. Enough to be usable from a terminal (list, create, show, move, comment).
-10. **CLI: remaining commands** (epics, tags, linkages, audit, export).
+10. **CLI: remaining commands** (epics, tags, linkages, audit, export, backup).
 11. **TUI scaffold**. Textual app skeleton, WebSocket client, REST client with ETag handling, workspace list view.
 12. **TUI: board view**. The core kanban experience. Drag-with-keyboard transitions.
 13. **TUI: story detail**. Markdown rendering, comment thread, linkage display.
@@ -698,23 +699,26 @@ Single-user web UI with the same views as the TUI. Stack TBD; likely htmx + serv
 - Full-text search (phase 1 uses LIKE; deferred FTS via SQLite FTS5 / Postgres tsvector).
 - Bulk operations (move 10 stories at once).
 - Import from Jira / GitHub Issues / Linear.
+- **Issue type conversion** (story ↔ epic). Phase 1 pins issue type at creation; the shared `next_issue_num` counter is deliberately designed so that a later phase (likely phase 2) can add an endpoint to convert an issue between types while preserving its human ID.
 
 ---
 
 ## 10. Open Questions & Deferred Decisions
 
-These are decisions we agreed to punt. Recorded here so they don't get lost.
+_No open questions for phase 1. All design questions from the initial draft were resolved on 2026-04-17 and folded into the relevant sections above. For the record, the resolutions were:_
 
-1. **Epic ID format.** Share the workspace's story number counter (so KAN-1 might be an epic and KAN-2 a story, with no visual distinction) or use a separate epic counter (KAN-E-1, KAN-E-2)? Leaning toward a shared counter (simpler, Jira-like), but flagging for confirmation before implementation.
-2. **Cross-workspace linkages.** Allowed or rejected at the API layer? Tentatively: allowed but requires both workspaces to exist. Revisit if it causes confusion.
-3. **Automatic story→epic move.** If a story is moved to an epic that belongs to a different workspace, do we reject (safest) or auto-move the story across workspaces? Recommend reject.
-4. **Markdown feature set.** GitHub-flavored markdown is the target. Decide on specific extensions (tables, task lists, mermaid) during TUI build.
-5. **Export format.** Parquet is the plan. Worth also offering raw SQL dump for easy restore?
-6. **Story templates.** Out of phase one, but worth designing the schema to accommodate later.
-7. **Tag renaming.** When a tag is renamed, do we preserve the original name in audit history? (Yes, via the standard audit diff, but worth confirming the UI surfaces this.)
-8. **Default priority.** Confirmed `none`, but worth deciding whether new stories created via MCP should default differently from stories created via the UI. Tentatively: same default everywhere.
-9. **Web UI tech choice.** Punted to phase 2 explicitly.
-10. **Backup strategy.** Beyond the SQLite file being trivially copyable, is there value in a scheduled snapshot command (`kb backup`) that writes timestamped dumps to a configurable directory? Low effort, probably yes, but not phase 1.
+1. **Epic ID format** → shared counter with stories (`KAN-1`, `KAN-2`, no type prefix). Leaves room for a future "change issue type" operation (section 9.5).
+2. **Cross-workspace linkages** → allowed; both workspaces must exist.
+3. **Auto cross-workspace move on story→epic reassignment** → reject. Users who want this should create a new issue in the target workspace and link it.
+4. **Markdown feature set** → decided during TUI build (milestone 12–13). Baseline: CommonMark + GFM tables + task lists. No mermaid or math in v1.
+5. **Export format** → Parquet files (analytic) plus a raw SQLite file copy (restore) inside the `/export` archive. No pg_dump yet.
+6. **Story templates** → deferred entirely from phase 1. No schema concessions.
+7. **Tag renaming in audit** → yes, surfaced in TUI audit view via the standard audit diff.
+8. **Default priority** → `none` everywhere (MCP and UI identical).
+9. **Web UI tech choice** → deferred to phase 2.
+10. **Backup strategy** → `kb backup` command added to phase 1 (milestone 10).
+
+New questions may be added here as they arise during implementation.
 
 ---
 
