@@ -9,8 +9,22 @@
 # Don't track .DS_Store (Mac Temp file)
 .DS_Store
 
-# Don't track __pycache__ folders
-*__pycache__
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
 
 # Don't track virtual environment subdirectories
 virtualenv/
@@ -19,3 +33,10 @@ venv/
 
 # Ignore .env, which may hold sensitive variables / secrets
 .env
+
+# Local Kanberoo data (SQLite DBs, exports, backups)
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
