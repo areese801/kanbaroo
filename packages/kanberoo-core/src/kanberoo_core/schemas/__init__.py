@@ -22,7 +22,12 @@ from kanberoo_core.schemas.audit import AuditEventRead
 from kanberoo_core.schemas.comment import CommentCreate, CommentRead, CommentUpdate
 from kanberoo_core.schemas.epic import EpicCreate, EpicRead, EpicUpdate
 from kanberoo_core.schemas.linkage import LinkageCreate, LinkageRead
-from kanberoo_core.schemas.story import StoryCreate, StoryRead, StoryUpdate
+from kanberoo_core.schemas.story import (
+    StoryCreate,
+    StoryRead,
+    StoryTransitionRequest,
+    StoryUpdate,
+)
 from kanberoo_core.schemas.tag import TagCreate, TagRead, TagUpdate
 from kanberoo_core.schemas.workspace import (
     WorkspaceCreate,
@@ -47,6 +52,7 @@ __all__ = [
     "LinkageRead",
     "StoryCreate",
     "StoryRead",
+    "StoryTransitionRequest",
     "StoryUpdate",
     "TagCreate",
     "TagRead",

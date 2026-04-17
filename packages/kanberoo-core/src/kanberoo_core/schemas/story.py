@@ -41,6 +41,18 @@ class StoryUpdate(WriteModel):
     pr_url: str | None = None
 
 
+class StoryTransitionRequest(WriteModel):
+    """
+    Payload for ``POST /stories/{id}/transition``.
+
+    ``to_state`` is the target state; ``reason`` is an optional
+    free-text note surfaced in the audit row under ``transition_reason``.
+    """
+
+    to_state: StoryState
+    reason: str | None = None
+
+
 class StoryRead(ReadModel):
     """
     Server response for any story read.
