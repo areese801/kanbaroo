@@ -29,6 +29,8 @@ from kanberoo_core.enums import AuditAction, AuditEntityType, StoryPriority, Sto
 from kanberoo_core.id_generator import generate_human_id
 from kanberoo_core.models.epic import Epic
 from kanberoo_core.models.story import Story
+from kanberoo_core.models.story_tag import story_tags
+from kanberoo_core.models.tag import Tag
 from kanberoo_core.queries import live
 from kanberoo_core.schemas.story import StoryCreate, StoryRead, StoryUpdate
 from kanberoo_core.services.audit import emit_audit
@@ -206,14 +208,11 @@ def list_stories(
     page.
 
     Supports the filters documented in ``docs/spec.md`` section 4.1:
-    ``state``, ``priority``, ``epic_id``. The ``tag`` parameter is
-    accepted for forward compatibility but not yet wired; tag filtering
-    lands with the tags REST surface in cage E. Callers passing
-    ``tag`` today receive the unfiltered result for that dimension.
+    ``state``, ``priority``, ``epic_id``, and ``tag``. ``tag`` accepts
+    the tag *name* (string) and joins ``story_tags`` / ``tags`` scoped
+    to the workspace, so a tag named ``bug`` in one workspace does not
+    match a differently-workspaced tag of the same name.
     """
-    # `tag` is accepted but deferred to cage E; see module docstring.
-    del tag
-
     if limit < 1:
         limit = 1
     if limit > MAX_PAGE_LIMIT:
@@ -226,6 +225,16 @@ def list_stories(
         stmt = stmt.where(Story.priority == priority)
     if epic_id is not None:
         stmt = stmt.where(Story.epic_id == epic_id)
+    if tag is not None:
+        stmt = (
+            stmt.join(story_tags, story_tags.c.story_id == Story.id)
+            .join(Tag, Tag.id == story_tags.c.tag_id)
+            .where(
+                Tag.workspace_id == workspace_id,
+                Tag.name == tag,
+                Tag.deleted_at.is_(None),
+            )
+        )
     if not include_deleted:
         stmt = live(stmt, Story)
     if cursor is not None:

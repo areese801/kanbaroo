@@ -26,6 +26,7 @@ from kanberoo_core.schemas.story import (
     StoryUpdate,
 )
 from kanberoo_core.services import stories as story_service
+from kanberoo_core.services import tags as tag_service
 
 workspace_router = APIRouter(prefix="/workspaces", tags=["stories"])
 router = APIRouter(prefix="/stories", tags=["stories"])
@@ -38,6 +39,14 @@ class StoryListResponse(BaseModel):
 
     items: list[StoryRead]
     next_cursor: str | None
+
+
+class StoryTagAddRequest(BaseModel):
+    """
+    Payload for ``POST /stories/{id}/tags``.
+    """
+
+    tag_ids: list[str]
 
 
 @workspace_router.get(
@@ -194,6 +203,56 @@ def soft_delete_story(
         actor=actor,
         story_id=story_id,
         expected_version=expected_version,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{story_id}/tags",
+    response_model=StoryRead,
+)
+def add_tags_to_story(
+    story_id: str,
+    payload: StoryTagAddRequest,
+    session: Session = Depends(get_session),
+    actor: Actor = Depends(resolve_actor),
+) -> StoryRead:
+    """
+    Associate tags with a story. Idempotent: already-associated tags
+    are silently skipped. Cross-workspace tagging returns 400
+    ``validation_error``. No ``If-Match`` required (association is
+    orthogonal to story version).
+    """
+    story = tag_service.add_tags_to_story(
+        session,
+        actor=actor,
+        story_id=story_id,
+        tag_ids=payload.tag_ids,
+    )
+    return StoryRead.model_validate(story)
+
+
+@router.delete(
+    "/{story_id}/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def remove_tag_from_story(
+    story_id: str,
+    tag_id: str,
+    session: Session = Depends(get_session),
+    actor: Actor = Depends(resolve_actor),
+) -> Response:
+    """
+    Remove a tag from a story. Idempotent: removing a non-associated
+    tag is a no-op and does not emit an audit row. No ``If-Match``
+    required.
+    """
+    tag_service.remove_tag_from_story(
+        session,
+        actor=actor,
+        story_id=story_id,
+        tag_id=tag_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

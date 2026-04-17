@@ -13,8 +13,11 @@ from fastapi import FastAPI
 
 from kanberoo_api.db import configure_engine
 from kanberoo_api.errors import register_exception_handlers
+from kanberoo_api.routers import comments as comments_router
 from kanberoo_api.routers import epics as epics_router
+from kanberoo_api.routers import linkages as linkages_router
 from kanberoo_api.routers import stories as stories_router
+from kanberoo_api.routers import tags as tags_router
 from kanberoo_api.routers import tokens as tokens_router
 from kanberoo_api.routers import workspaces as workspaces_router
 
@@ -53,6 +56,12 @@ def create_app(*, database_url: str | None = None) -> FastAPI:
     app.include_router(epics_router.router, prefix=API_PREFIX)
     app.include_router(stories_router.workspace_router, prefix=API_PREFIX)
     app.include_router(stories_router.router, prefix=API_PREFIX)
+    app.include_router(comments_router.story_router, prefix=API_PREFIX)
+    app.include_router(comments_router.router, prefix=API_PREFIX)
+    app.include_router(tags_router.workspace_router, prefix=API_PREFIX)
+    app.include_router(tags_router.router, prefix=API_PREFIX)
+    app.include_router(linkages_router.story_router, prefix=API_PREFIX)
+    app.include_router(linkages_router.router, prefix=API_PREFIX)
     app.include_router(tokens_router.router, prefix=API_PREFIX)
 
     return app
