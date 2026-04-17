@@ -13,6 +13,10 @@ dependencies = [
     "httpx>=0.27",
 ]
 
+[project.scripts]
+kanberoo = "kanberoo_cli.app:app"
+kb = "kanberoo_cli.app:app"
+
 [tool.uv.sources]
 kanberoo-core = { workspace = true }
 

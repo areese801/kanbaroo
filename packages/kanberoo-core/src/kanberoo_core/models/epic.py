@@ -11,7 +11,7 @@ from sqlalchemy import Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kanberoo_core.db import Base, new_id
-from kanberoo_core.enums import EpicState
+from kanberoo_core.enums import EpicState, enum_values
 from kanberoo_core.models.base import (
     SoftDeleteMixin,
     TimestampMixin,
@@ -36,7 +36,13 @@ class Epic(Base, TimestampMixin, SoftDeleteMixin, VersionMixin):
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     state: Mapped[EpicState] = mapped_column(
-        Enum(EpicState, native_enum=False, name="epic_state", create_constraint=True),
+        Enum(
+            EpicState,
+            native_enum=False,
+            name="epic_state",
+            create_constraint=True,
+            values_callable=enum_values,
+        ),
         nullable=False,
         default=EpicState.OPEN,
     )

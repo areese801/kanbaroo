@@ -14,3 +14,9 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 - Pydantic v2 Create/Update/Read schemas for every mutable entity, plus Read-only schemas for `audit_events` and `api_tokens`.
 - Atomic `generate_human_id` helper that bumps `workspaces.next_issue_num` under `SELECT ... FOR UPDATE` and returns the next `{KEY}-{N}` identifier (shared across stories and epics).
 - Initial Alembic migration (`0001_initial`) producing the full spec section 3.3 schema, with partial indexes on soft-delete columns and CHECK constraints on every fixed-domain enum column.
+- `kanberoo-core` auth layer: frozen `Actor` dataclass plus `hash_token`, `generate_token_plaintext`, `create_token`, `validate_token`, and `revoke_token` helpers, with SHA-256 hashing and a `kbr_` plaintext prefix. Plaintext tokens are never persisted; only the hash is stored.
+- `kanberoo-core` exposes `migrations.upgrade_to_head` so the CLI can run Alembic programmatically without depending on `alembic.ini` location; the `alembic/` directory is also force-included into the wheel.
+- `kanberoo-cli` Typer scaffold with `kanberoo` and `kb` entry points, plus a `kb init` command that creates `$KANBEROO_CONFIG_DIR` (default `~/.kanberoo`), applies migrations to a fresh SQLite database, issues the first human API token, writes `config.toml`, and prints the plaintext exactly once.
+
+### Fixed
+- Model `Enum` columns now store the lowercase `.value` (e.g. `human`) via a shared `enum_values` helper, matching the spec and the Alembic migration CHECK constraints. Before this fix, SQLAlchemy defaulted to the enum `name` (e.g. `HUMAN`), which diverged from the migration-created schema and would reject inserts on a freshly-migrated database.

@@ -11,7 +11,7 @@ from sqlalchemy import Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kanberoo_core.db import Base, new_id
-from kanberoo_core.enums import ActorType
+from kanberoo_core.enums import ActorType, enum_values
 from kanberoo_core.time import utc_now_iso
 
 
@@ -31,6 +31,7 @@ class ApiToken(Base):
             native_enum=False,
             name="api_token_actor_type",
             create_constraint=True,
+            values_callable=enum_values,
         ),
         nullable=False,
     )
