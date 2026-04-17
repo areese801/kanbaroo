@@ -13,7 +13,11 @@ milestone; their write paths live in later milestones (audit emission and
 auth respectively).
 """
 
-from kanberoo_core.schemas.api_token import ApiTokenRead
+from kanberoo_core.schemas.api_token import (
+    ApiTokenCreate,
+    ApiTokenCreatedRead,
+    ApiTokenRead,
+)
 from kanberoo_core.schemas.audit import AuditEventRead
 from kanberoo_core.schemas.comment import CommentCreate, CommentRead, CommentUpdate
 from kanberoo_core.schemas.epic import EpicCreate, EpicRead, EpicUpdate
@@ -29,6 +33,8 @@ from kanberoo_core.schemas.workspace import (
 )
 
 __all__ = [
+    "ApiTokenCreate",
+    "ApiTokenCreatedRead",
     "ApiTokenRead",
     "AuditEventRead",
     "CommentCreate",

@@ -7,7 +7,7 @@ logic and the audit emission helper are intentionally not yet implemented;
 they will arrive in later milestones.
 """
 
-from kanberoo_core import models, schemas
+from kanberoo_core import models, schemas, services
 from kanberoo_core.actor import Actor
 from kanberoo_core.auth import (
     create_token,
@@ -53,6 +53,7 @@ __all__ = [
     "models",
     "revoke_token",
     "schemas",
+    "services",
     "utc_now_iso",
     "validate_token",
 ]
