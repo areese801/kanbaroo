@@ -55,6 +55,19 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Header",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.Cookie",
+    "typer.Option",
+    "typer.Argument",
+]
+
 [tool.ruff.lint.isort]
 known-first-party = [
     "kanberoo_core",
