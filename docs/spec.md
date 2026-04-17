@@ -334,7 +334,7 @@ CREATE TABLE api_tokens (
 - **Human IDs**: Stories and epics share a single monotonic counter per workspace (`workspaces.next_issue_num`), yielding IDs like `KAN-1`, `KAN-2`, etc. with no type prefix. A given number identifies a unique entity regardless of type; issue type is determined by which table the row lives in. Generated atomically on insert. This leaves room for a future "change issue type" operation (see section 9.5) that preserves the human ID across the conversion.
 - **Timestamps**: Stored as ISO 8601 TEXT (e.g. `2026-04-17T15:30:00Z`). Trivial to parse in every language, no timezone ambiguity.
 - **Soft delete**: Every mutable entity has `deleted_at`. Null means alive. API hides deleted rows by default.
-- **Versioning**: Every mutable entity has a `version` integer. Incremented on every update. Used for ETag and If-Match concurrency.
+- **Versioning**: Every mutable entity has a `version` integer. Incremented on every update. Used for ETag and If-Match concurrency. Note that allocating a human ID via the shared `next_issue_num` counter is a write to the `workspaces` row and therefore bumps that workspace's `version`. Clients editing workspace metadata while issues are being created must be prepared to retry on `412 Precondition Failed`.
 - **Cascade behavior**: Hard deletes cascade via FK. Soft deletes do not cascade automatically; the application logic soft-deletes children explicitly and logs each.
 
 ---

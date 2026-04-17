@@ -55,6 +55,15 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.isort]
+known-first-party = [
+    "kanberoo_core",
+    "kanberoo_api",
+    "kanberoo_tui",
+    "kanberoo_cli",
+    "kanberoo_mcp",
+]
+
 [tool.ruff.format]
 quote-style = "double"
 
@@ -62,6 +71,11 @@ quote-style = "double"
 python_version = "3.12"
 strict = true
 ignore_missing_imports = true
+exclude = [
+    "(^|/)alembic/",
+    "(^|/)build/",
+    "(^|/)dist/",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages"]
