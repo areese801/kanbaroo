@@ -13,6 +13,8 @@ from fastapi import FastAPI
 
 from kanberoo_api.db import configure_engine
 from kanberoo_api.errors import register_exception_handlers
+from kanberoo_api.routers import epics as epics_router
+from kanberoo_api.routers import stories as stories_router
 from kanberoo_api.routers import tokens as tokens_router
 from kanberoo_api.routers import workspaces as workspaces_router
 
@@ -47,6 +49,10 @@ def create_app(*, database_url: str | None = None) -> FastAPI:
     register_exception_handlers(app)
 
     app.include_router(workspaces_router.router, prefix=API_PREFIX)
+    app.include_router(epics_router.workspace_router, prefix=API_PREFIX)
+    app.include_router(epics_router.router, prefix=API_PREFIX)
+    app.include_router(stories_router.workspace_router, prefix=API_PREFIX)
+    app.include_router(stories_router.router, prefix=API_PREFIX)
     app.include_router(tokens_router.router, prefix=API_PREFIX)
 
     return app
