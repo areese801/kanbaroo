@@ -1,0 +1,15 @@
+services:
+  kanberoo-api:
+    build: .
+    image: kanberoo/kanberoo:dev
+    container_name: kanberoo-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - kanberoo-data:/data
+    environment:
+      KANBEROO_DATABASE_URL: "sqlite:////data/kanberoo.db"
+    restart: unless-stopped
+
+volumes:
+  kanberoo-data:
