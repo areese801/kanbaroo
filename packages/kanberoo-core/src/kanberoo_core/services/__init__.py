@@ -26,9 +26,12 @@ Public submodules:
 
 from kanberoo_core.services import (
     audit,
+    comments,
     epics,
     exceptions,
+    linkages,
     stories,
+    tags,
     tokens,
     workspaces,
 )
@@ -46,10 +49,13 @@ __all__ = [
     "ValidationError",
     "VersionConflictError",
     "audit",
+    "comments",
     "emit_audit",
     "epics",
     "exceptions",
+    "linkages",
     "stories",
+    "tags",
     "tokens",
     "workspaces",
 ]

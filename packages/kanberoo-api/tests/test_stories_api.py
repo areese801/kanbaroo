@@ -370,3 +370,123 @@ def test_by_key_404_for_unknown_human_id(client: TestClient, human_auth: Any) ->
     response = client.get("/api/v1/stories/by-key/NOPE-1", headers=human_auth.headers)
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def _create_tag(
+    client: TestClient,
+    human_auth: Any,
+    workspace_id: str,
+    *,
+    name: str,
+) -> dict[str, Any]:
+    """
+    POST a tag and return the decoded body.
+    """
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/tags",
+        json={"name": name},
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 201
+    body: dict[str, Any] = response.json()
+    return body
+
+
+def test_add_tags_to_story_returns_story(client: TestClient, human_auth: Any) -> None:
+    """
+    POST ``/stories/{id}/tags`` attaches tags and returns the story.
+    """
+    ws = _create_workspace(client, human_auth)
+    story = _create_story(client, human_auth, ws["id"])
+    tag = _create_tag(client, human_auth, ws["id"], name="bug")
+
+    response = client.post(
+        f"/api/v1/stories/{story['id']}/tags",
+        json={"tag_ids": [tag["id"]]},
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == story["id"]
+
+
+def test_remove_tag_from_story_is_204(client: TestClient, human_auth: Any) -> None:
+    """
+    DELETE ``/stories/{id}/tags/{tag_id}`` returns 204 and is
+    idempotent for missing associations.
+    """
+    ws = _create_workspace(client, human_auth)
+    story = _create_story(client, human_auth, ws["id"])
+    tag = _create_tag(client, human_auth, ws["id"], name="bug")
+    client.post(
+        f"/api/v1/stories/{story['id']}/tags",
+        json={"tag_ids": [tag["id"]]},
+        headers=human_auth.headers,
+    )
+
+    first = client.delete(
+        f"/api/v1/stories/{story['id']}/tags/{tag['id']}",
+        headers=human_auth.headers,
+    )
+    assert first.status_code == 204
+
+    # Idempotent: second delete also 204.
+    second = client.delete(
+        f"/api/v1/stories/{story['id']}/tags/{tag['id']}",
+        headers=human_auth.headers,
+    )
+    assert second.status_code == 204
+
+
+def test_list_stories_filters_by_tag_name(client: TestClient, human_auth: Any) -> None:
+    """
+    ``?tag=<name>`` restricts the list to stories carrying that tag in
+    the workspace.
+    """
+    ws = _create_workspace(client, human_auth)
+    bug_tag = _create_tag(client, human_auth, ws["id"], name="bug")
+    target = _create_story(client, human_auth, ws["id"], title="bug story")
+    _create_story(client, human_auth, ws["id"], title="other")
+
+    client.post(
+        f"/api/v1/stories/{target['id']}/tags",
+        json={"tag_ids": [bug_tag["id"]]},
+        headers=human_auth.headers,
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{ws['id']}/stories?tag=bug",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [s["id"] for s in items] == [target["id"]]
+
+
+def test_tag_filter_is_workspace_scoped(client: TestClient, human_auth: Any) -> None:
+    """
+    A tag with the same name in another workspace does not bleed into
+    the filter.
+    """
+    ws_a = _create_workspace(client, human_auth, key="AAA")
+    ws_b = _create_workspace(client, human_auth, key="BBB")
+    bug_a = _create_tag(client, human_auth, ws_a["id"], name="bug")
+    bug_b = _create_tag(client, human_auth, ws_b["id"], name="bug")
+    story_a = _create_story(client, human_auth, ws_a["id"])
+    story_b = _create_story(client, human_auth, ws_b["id"])
+    client.post(
+        f"/api/v1/stories/{story_a['id']}/tags",
+        json={"tag_ids": [bug_a["id"]]},
+        headers=human_auth.headers,
+    )
+    client.post(
+        f"/api/v1/stories/{story_b['id']}/tags",
+        json={"tag_ids": [bug_b["id"]]},
+        headers=human_auth.headers,
+    )
+
+    response = client.get(
+        f"/api/v1/workspaces/{ws_a['id']}/stories?tag=bug",
+        headers=human_auth.headers,
+    )
+    items = response.json()["items"]
+    assert [s["id"] for s in items] == [story_a["id"]]
