@@ -321,3 +321,27 @@ def test_create_epic_in_unknown_workspace_is_404(
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def test_get_epic_by_key_roundtrip_and_404(client: TestClient, human_auth: Any) -> None:
+    """
+    ``GET /epics/by-key/{human_id}`` returns the epic with its ETag
+    for a live row and 404 for an unknown handle.
+    """
+    ws = _create_workspace(client, human_auth)
+    epic = _create_epic(client, human_auth, ws["id"], title="release")
+
+    response = client.get(
+        f"/api/v1/epics/by-key/{epic['human_id']}",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == epic["id"]
+    assert response.headers["etag"] == "1"
+
+    missing = client.get(
+        "/api/v1/epics/by-key/NOPE-1",
+        headers=human_auth.headers,
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "not_found"

@@ -88,6 +88,7 @@ exclude = [
     "(^|/)alembic/",
     "(^|/)build/",
     "(^|/)dist/",
+    "packages/kanberoo-cli/tests/",
 ]
 
 [tool.pytest.ini_options]
