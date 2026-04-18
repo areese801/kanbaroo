@@ -30,9 +30,20 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
 from kanberoo_tui.client import ApiError
-from kanberoo_tui.messages import WorkspaceSelected
+from kanberoo_tui.messages import OpenAuditFeed, OpenSearch, WorkspaceSelected
+from kanberoo_tui.widgets.help_modal import KeybindingHelp
 
 WORKSPACE_EVENT_PREFIX = "workspace."
+
+HELP_ROWS: list[tuple[str, str]] = [
+    ("j / k", "move cursor"),
+    ("enter / l / right", "open workspace board"),
+    ("/", "fuzzy search"),
+    ("a", "global audit feed"),
+    ("r", "refresh list"),
+    ("q", "quit"),
+    ("?", "this overlay"),
+]
 
 
 class WorkspaceListScreen(Screen[None]):
@@ -50,8 +61,10 @@ class WorkspaceListScreen(Screen[None]):
         Binding("l", "open_selected", "Open", show=False),
         Binding("right", "open_selected", "Open", show=False),
         Binding("enter", "open_selected", "Open", priority=True),
+        Binding("slash", "open_search", "Search", show=False),
+        Binding("a", "open_audit_feed", "Audit"),
         Binding("r", "refresh_list", "Refresh"),
-        Binding("?", "app.show_help_panel", "Help", show=False),
+        Binding("?", "show_help", "Help", show=False),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -238,6 +251,26 @@ class WorkspaceListScreen(Screen[None]):
         """
         await self.refresh_data()
         self.notify("workspaces refreshed")
+
+    def action_open_search(self) -> None:
+        """
+        Ask the app to push the fuzzy-search overlay.
+        """
+        self.post_message(OpenSearch())
+
+    def action_open_audit_feed(self) -> None:
+        """
+        Ask the app to push the global audit feed.
+        """
+        self.post_message(OpenAuditFeed())
+
+    async def action_show_help(self) -> None:
+        """
+        Push the shared help overlay with this screen's bindings.
+        """
+        await self.app.push_screen(
+            KeybindingHelp(title="Workspaces", bindings=HELP_ROWS)
+        )
 
     def action_open_selected(self) -> None:
         """

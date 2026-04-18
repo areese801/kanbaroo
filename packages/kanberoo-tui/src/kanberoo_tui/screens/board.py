@@ -14,12 +14,14 @@ and translates ``b`` / ``t`` / ``p`` / ``r`` / ``d`` into a
 ``If-Match``. On success the board refetches; the card shows up in
 its new column after the refresh.
 
-Cage H scope
-------------
+Cage I adds three new surfaces:
 
-The story detail screen, search, and audit feed are reserved for
-cage I. The matching keybindings (``enter``, ``/``) flash a short
-placeholder message so the shape is obvious without doing the work.
+* ``enter`` on a card pushes :class:`StoryDetailScreen` instead of
+  flashing a placeholder.
+* ``n`` opens ``$EDITOR`` on a story template; saving creates a
+  new story in the current workspace.
+* ``/`` opens the global fuzzy-search overlay via the
+  :class:`OpenSearch` message.
 """
 
 from __future__ import annotations
@@ -34,7 +36,10 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header
 
 from kanberoo_tui.client import ApiError
+from kanberoo_tui.editor import EditorRunner, edit_markdown
+from kanberoo_tui.messages import OpenSearch, StorySelected
 from kanberoo_tui.widgets.board_column import BoardColumn
+from kanberoo_tui.widgets.help_modal import KeybindingHelp
 from kanberoo_tui.widgets.story_card import StoryCard
 
 COLUMN_STATES: list[tuple[str, str]] = [
@@ -54,6 +59,22 @@ MOVE_KEY_TO_STATE: dict[str, str] = {
 }
 
 STORY_EVENT_PREFIX = "story."
+
+NEW_STORY_TEMPLATE = "# Title (replace this line)\n\n# Description below\n\n"
+
+PLACEHOLDER_TITLE = "Title (replace this line)"
+
+HELP_ROWS: list[tuple[str, str]] = [
+    ("h / l / \u2190 / \u2192", "move between columns"),
+    ("j / k / \u2193 / \u2191", "move within a column"),
+    ("enter", "open story detail"),
+    ("m then b/t/p/r/d", "move the focused card"),
+    ("n", "new story via $EDITOR"),
+    ("/", "fuzzy search"),
+    ("r", "refresh board"),
+    ("q", "back to workspace list"),
+    ("?", "this overlay"),
+]
 
 
 class BoardScreen(Screen[None]):
@@ -76,9 +97,10 @@ class BoardScreen(Screen[None]):
         Binding("up", "focus_prev_card", "Prev card", show=False),
         Binding("m", "enter_move_mode", "Move"),
         Binding("enter", "open_detail", "Detail"),
+        Binding("n", "new_story", "New"),
         Binding("slash", "open_search", "Search", show=False),
         Binding("r", "refresh_board", "Refresh"),
-        Binding("?", "app.show_help_panel", "Help", show=False),
+        Binding("?", "show_help", "Help", show=False),
         Binding("q", "back", "Back"),
         Binding("escape", "cancel_move_mode", "Cancel move", show=False, priority=True),
     ]
@@ -92,10 +114,18 @@ class BoardScreen(Screen[None]):
     }
     """
 
-    def __init__(self, workspace: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        workspace: dict[str, Any],
+        *,
+        editor_runner: EditorRunner | None = None,
+    ) -> None:
         """
         Build an empty board for ``workspace``. Cards load in
-        :meth:`on_mount`.
+        :meth:`on_mount`. ``editor_runner`` forwards to
+        :func:`edit_markdown` for ``n``; tests inject a fake so the
+        new-story template fills itself without launching a real
+        editor.
         """
         super().__init__()
         self._workspace = workspace
@@ -104,6 +134,7 @@ class BoardScreen(Screen[None]):
         self._move_mode: bool = False
         self._active_col: int = 0
         self._active_row: int = 0
+        self._editor_runner = editor_runner
 
     def compose(self) -> ComposeResult:
         """
@@ -328,15 +359,59 @@ class BoardScreen(Screen[None]):
 
     def action_open_detail(self) -> None:
         """
-        Placeholder for the story-detail screen landed in cage I.
+        Post :class:`StorySelected` for the focused card so the app
+        can push the detail screen.
         """
-        self.notify("story detail: cage I")
+        card = self._focused_card()
+        if card is None:
+            self.notify("no card focused")
+            return
+        self.post_message(StorySelected(card.story))
 
     def action_open_search(self) -> None:
         """
-        Placeholder for fuzzy search landed in cage I.
+        Post :class:`OpenSearch` so the app can push the search
+        screen on top of the current screen stack.
         """
-        self.notify("search: cage I")
+        self.post_message(OpenSearch())
+
+    async def action_show_help(self) -> None:
+        """
+        Push the shared help overlay with this screen's bindings.
+        """
+        await self.app.push_screen(KeybindingHelp(title="Board", bindings=HELP_ROWS))
+
+    async def action_new_story(self) -> None:
+        """
+        Launch ``$EDITOR`` on a new-story template and POST the result.
+
+        The template's first non-empty line becomes the title; anything
+        after becomes the markdown description. Leaving the title line
+        unchanged (or deleting everything) aborts with a flash so a
+        stray ``n`` keypress never creates a junk story.
+        """
+        edited = await edit_markdown(
+            self.app, NEW_STORY_TEMPLATE, runner=self._editor_runner
+        )
+        if edited is None:
+            self.notify("new story aborted")
+            return
+        title, description = _split_new_story(edited)
+        if not title or title == PLACEHOLDER_TITLE:
+            self.notify("new story aborted: title unchanged")
+            return
+        client = self.app.client  # type: ignore[attr-defined]
+        workspace_id = str(self._workspace.get("id", ""))
+        payload: dict[str, Any] = {"title": title}
+        if description:
+            payload["description"] = description
+        try:
+            await client.post(f"/workspaces/{workspace_id}/stories", json=payload)
+        except ApiError as exc:
+            self.notify(f"new story failed: {exc}", severity="error")
+            return
+        self.notify(f"created story '{title}'")
+        await self.refresh_data()
 
     def action_back(self) -> None:
         """
@@ -400,3 +475,40 @@ class BoardScreen(Screen[None]):
         event_type = str(event.get("event_type", ""))
         if event_type.startswith(STORY_EVENT_PREFIX):
             await self.refresh_data()
+
+
+def _split_new_story(raw: str) -> tuple[str, str]:
+    """
+    Parse the new-story template output into (title, description).
+
+    First non-empty, non-comment line wins as the title; a leading
+    ``#`` is stripped so users can treat the template's markdown-style
+    header as a hint rather than preserved prose. Everything after the
+    title line becomes the description, leading blank lines trimmed so
+    the body does not open with an empty paragraph.
+    """
+    lines = raw.splitlines()
+    title: str | None = None
+    description_lines: list[str] = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if title is None:
+            if not stripped:
+                continue
+            normalized = stripped
+            if normalized.startswith("#"):
+                normalized = normalized.lstrip("#").strip()
+            title = normalized
+            description_lines = lines[index + 1 :]
+            break
+    while description_lines and not description_lines[0].strip():
+        description_lines.pop(0)
+    while description_lines and not description_lines[-1].strip():
+        description_lines.pop()
+    description = "\n".join(description_lines)
+    # Drop the second "# Description below" template marker if it
+    # survived unmodified.
+    if description.startswith("# Description below"):
+        stripped_desc = description.split("\n", 1)
+        description = stripped_desc[1].lstrip("\n") if len(stripped_desc) > 1 else ""
+    return title or "", description
