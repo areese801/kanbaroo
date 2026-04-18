@@ -92,6 +92,30 @@ def create_epic(
     return EpicRead.model_validate(epic)
 
 
+@router.get("/by-key/{human_id}", response_model=EpicRead)
+def get_epic_by_human_id(
+    human_id: str,
+    response: Response,
+    include_deleted: bool = Query(False),
+    session: Session = Depends(get_session),
+    _actor: Actor = Depends(resolve_actor),
+) -> EpicRead:
+    """
+    Return an epic by its ``{KEY}-{N}`` human identifier.
+
+    Mirrors :func:`get_story_by_human_id`; the CLI uses this so that
+    the ``--epic KAN-N`` flag can be translated to a UUID without a
+    workspace-wide list scan.
+    """
+    epic = epic_service.get_epic_by_human_id(
+        session,
+        human_id=human_id,
+        include_deleted=include_deleted,
+    )
+    response.headers["ETag"] = etag_for(epic.version)
+    return EpicRead.model_validate(epic)
+
+
 @router.get("/{epic_id}", response_model=EpicRead)
 def get_epic(
     epic_id: str,

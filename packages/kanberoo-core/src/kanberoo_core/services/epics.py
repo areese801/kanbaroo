@@ -176,6 +176,28 @@ def get_epic(
     return epic
 
 
+def get_epic_by_human_id(
+    session: Session,
+    *,
+    human_id: str,
+    include_deleted: bool = False,
+) -> Epic:
+    """
+    Return an epic by its ``{KEY}-{N}`` human identifier or raise
+    :class:`NotFoundError`.
+
+    Used by the ``GET /epics/by-key/{human_id}`` endpoint. Soft-
+    deleted rows are hidden unless ``include_deleted`` is ``True``.
+    """
+    stmt = select(Epic).where(Epic.human_id == human_id)
+    epic = session.execute(stmt).scalar_one_or_none()
+    if epic is None:
+        raise NotFoundError("epic", human_id)
+    if epic.deleted_at is not None and not include_deleted:
+        raise NotFoundError("epic", human_id)
+    return epic
+
+
 def update_epic(
     session: Session,
     *,
