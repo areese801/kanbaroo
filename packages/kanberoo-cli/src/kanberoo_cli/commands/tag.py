@@ -21,6 +21,7 @@ from kanberoo_cli.rendering import (
     stdout_console,
 )
 from kanberoo_cli.resolvers import require_effective_workspace, resolve_workspace
+from kanberoo_cli.similar import fetch_similar_entities, print_similar_entities
 
 app = typer.Typer(
     name="tag",
@@ -140,19 +141,43 @@ def create_tag(
         "--color",
         help="Optional hex color (e.g. #cc3333).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Skip the duplicate-name prompt and create the tag regardless.",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """
     Create a workspace-scoped tag.
+
+    Mirrors ``kb story create``: a normalised-name check runs first
+    so visually similar tags (``UI`` vs ``ui``) trigger an interactive
+    confirmation. ``--force`` skips the prompt; ``--json`` never
+    prompts but folds the matches into a ``warnings`` field.
     """
     config = require_config()
     workspace_ref = require_effective_workspace(workspace, config)
     payload: dict[str, Any] = {"name": name}
     if color is not None:
         payload["color"] = color
+    similar: list[dict[str, Any]] = []
     with build_client(config) as client:
         try:
             ws = resolve_workspace(client, workspace_ref)
+            similar = fetch_similar_entities(
+                client,
+                workspace_id=str(ws["id"]),
+                resource="tags",
+                field_name="name",
+                value=name,
+            )
+            if similar and not as_json and not force:
+                print_similar_entities(similar, label_key="name", entity="tag")
+                confirmed = typer.confirm("Create anyway?", default=False)
+                if not confirmed:
+                    stdout_console.print("aborted: existing entity has a similar name")
+                    raise typer.Exit(code=1)
             response = client.post(
                 f"/workspaces/{ws['id']}/tags",
                 json=payload,
@@ -162,6 +187,8 @@ def create_tag(
         body = response.json()
 
     if as_json:
+        if similar:
+            body = {**body, "warnings": {"similar": [s["id"] for s in similar]}}
         print_json(body)
         return
     stdout_console.print(f"created tag [bold]{body['name']}[/bold] (id {body['id']})")

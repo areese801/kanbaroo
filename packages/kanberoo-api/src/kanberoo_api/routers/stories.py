@@ -89,6 +89,39 @@ def list_stories(
     )
 
 
+@workspace_router.get(
+    "/{workspace_id}/stories/similar",
+    response_model=StoryListResponse,
+)
+def find_similar_stories(
+    workspace_id: str,
+    title: str = Query(..., description="Title to compare against."),
+    include_deleted: bool = Query(False),
+    session: Session = Depends(get_session),
+    _actor: Actor = Depends(resolve_actor),
+) -> StoryListResponse:
+    """
+    Return stories in ``workspace_id`` whose title is normalised
+    equivalent to ``title`` (see
+    :func:`kanberoo_core.text.normalize_for_comparison`).
+
+    Used by clients to warn the user before creating a duplicate.
+    The response envelope reuses :class:`StoryListResponse` for shape
+    consistency; ``next_cursor`` is always ``null`` because the
+    result set is intentionally unpaginated.
+    """
+    rows = story_service.find_similar_stories(
+        session,
+        workspace_id=workspace_id,
+        title=title,
+        include_deleted=include_deleted,
+    )
+    return StoryListResponse(
+        items=[StoryRead.model_validate(row) for row in rows],
+        next_cursor=None,
+    )
+
+
 @workspace_router.post(
     "/{workspace_id}/stories",
     response_model=StoryRead,

@@ -39,8 +39,10 @@ from kanberoo_tui.client import ApiError
 from kanberoo_tui.editor import EditorRunner, edit_markdown
 from kanberoo_tui.messages import OpenSearch, StorySelected
 from kanberoo_tui.widgets.board_column import BoardColumn
+from kanberoo_tui.widgets.duplicate_confirm import DuplicateConfirm
 from kanberoo_tui.widgets.help_modal import KeybindingHelp
 from kanberoo_tui.widgets.story_card import StoryCard
+from kanberoo_tui.widgets.tag_filter import TagFilterPicker
 
 COLUMN_STATES: list[tuple[str, str]] = [
     ("backlog", "Backlog"),
@@ -65,6 +67,64 @@ STATE_PROGRESSION: list[str] = [
     "in_review",
     "done",
 ]
+
+SORT_MODE_ID_ASC = "id-asc"
+SORT_MODE_PRIORITY_DESC = "priority-desc"
+
+SORT_MODE_CYCLE: list[str] = [SORT_MODE_ID_ASC, SORT_MODE_PRIORITY_DESC]
+
+PRIORITY_RANK: dict[str, int] = {
+    "high": 0,
+    "medium": 1,
+    "low": 2,
+    "none": 3,
+}
+
+_ID_SUFFIX_MAX = 10**12
+
+
+def _id_suffix(human_id: str) -> int:
+    """
+    Return the numeric suffix of a ``KAN-N`` style id, or
+    :data:`sys.maxsize` when the id is malformed.
+
+    Used as the secondary sort key in priority mode and the primary
+    sort key in id-asc mode so a sparse id range stays in its natural
+    order (KAN-2 before KAN-10).
+    """
+    if not human_id:
+        return _ID_SUFFIX_MAX
+    _, _, tail = human_id.rpartition("-")
+    if not tail.isdigit():
+        return _ID_SUFFIX_MAX
+    return int(tail)
+
+
+def sort_stories(
+    stories: list[dict[str, Any]],
+    mode: str,
+) -> list[dict[str, Any]]:
+    """
+    Return ``stories`` ordered according to ``mode``.
+
+    ``id-asc`` sorts by the numeric suffix of ``human_id`` ascending
+    (the historical default). ``priority-desc`` sorts by priority
+    bucket (high, medium, low, none) breaking ties on the same id
+    suffix. Unknown modes fall back to ``id-asc`` so the board never
+    renders blank.
+    """
+    if mode == SORT_MODE_PRIORITY_DESC:
+        return sorted(
+            stories,
+            key=lambda s: (
+                PRIORITY_RANK.get(str(s.get("priority", "none")), len(PRIORITY_RANK)),
+                _id_suffix(str(s.get("human_id", ""))),
+            ),
+        )
+    return sorted(
+        stories,
+        key=lambda s: _id_suffix(str(s.get("human_id", ""))),
+    )
 
 
 def next_forward_state(current: str) -> str | None:
@@ -99,6 +159,9 @@ HELP_ROWS: list[tuple[str, str]] = [
     (">", "advance the focused card one step"),
     ("n", "new story via $EDITOR"),
     ("/", "fuzzy search"),
+    ("f", "filter by tag"),
+    ("F", "clear tag filter"),
+    ("s", "cycle sort mode (id / priority)"),
     ("r", "refresh board"),
     ("q", "back to workspace list"),
     ("?", "this overlay"),
@@ -133,6 +196,9 @@ class BoardScreen(Screen[None]):
         Binding("enter", "open_detail", "Detail"),
         Binding("n", "new_story", "New"),
         Binding("slash", "open_search", "Search", show=False),
+        Binding("f", "open_tag_filter", "Filter", priority=True),
+        Binding("F", "clear_tag_filter", "Clear filter", priority=True),
+        Binding("s", "cycle_sort", "Sort", priority=True),
         Binding("r", "refresh_board", "Refresh"),
         Binding("?", "show_help", "Help", show=False),
         Binding("q", "back", "Back", priority=True),
@@ -169,6 +235,13 @@ class BoardScreen(Screen[None]):
         self._active_col: int = 0
         self._active_row: int = 0
         self._editor_runner = editor_runner
+        # Active tag filter: list of (tag_id, tag_name) tuples. Empty
+        # means "no filter, show all". The tag_name is used to drive
+        # the server-side ``?tag=`` filter (one fetch per tag, then
+        # union); the tag_id is what the picker round-trips so the
+        # selection survives reopen.
+        self._active_tag_filter: list[tuple[str, str]] = []
+        self._sort_mode: str = SORT_MODE_ID_ASC
 
     def compose(self) -> ComposeResult:
         """
@@ -217,14 +290,55 @@ class BoardScreen(Screen[None]):
         """
         return self._move_mode
 
+    @property
+    def active_tag_filter(self) -> list[tuple[str, str]]:
+        """
+        Return the active ``(tag_id, tag_name)`` filter; empty means
+        "no filter active".
+        """
+        return list(self._active_tag_filter)
+
+    @property
+    def sort_mode(self) -> str:
+        """
+        Return the active sort mode (``id-asc`` or ``priority-desc``).
+        """
+        return self._sort_mode
+
     async def on_mount(self) -> None:
         """
         Register as the WS listener and load the board data.
         """
-        key = str(self._workspace.get("key", ""))
-        self.sub_title = f"{key} - Board" if key else "Board"
+        self._update_sub_title()
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
         await self.refresh_data()
+
+    def _update_sub_title(self) -> None:
+        """
+        Recompute the screen sub_title to reflect any active filter
+        and non-default sort mode.
+        """
+        key = str(self._workspace.get("key", ""))
+        parts: list[str] = []
+        if key:
+            parts.append(f"{key} - Board")
+        else:
+            parts.append("Board")
+        if self._active_tag_filter:
+            tags = ", ".join(name for _id, name in self._active_tag_filter)
+            parts.append(f"filter: {tags}")
+        if self._sort_mode != SORT_MODE_ID_ASC:
+            parts.append(f"sort: {self._sort_mode_label()}")
+        self.sub_title = "  |  ".join(parts)
+
+    def _sort_mode_label(self) -> str:
+        """
+        Return a short human-readable label for the current sort
+        mode, used in the header chip.
+        """
+        if self._sort_mode == SORT_MODE_PRIORITY_DESC:
+            return "priority"
+        return "id"
 
     def on_unmount(self) -> None:
         """
@@ -239,12 +353,21 @@ class BoardScreen(Screen[None]):
 
         Walks the paginated story endpoint with ``limit=200`` so a
         workspace with a few hundred stories renders in one round-trip
-        pair.
+        pair. When :attr:`_active_tag_filter` is non-empty the fetch
+        is partitioned per tag (one call each) and the union is
+        rendered.
         """
         client = self.app.client  # type: ignore[attr-defined]
         workspace_id = str(self._workspace.get("id", ""))
         try:
-            stories = await self._fetch_stories(client, workspace_id)
+            if self._active_tag_filter:
+                stories = await self._fetch_stories_by_tags(
+                    client,
+                    workspace_id,
+                    [name for _id, name in self._active_tag_filter],
+                )
+            else:
+                stories = await self._fetch_stories(client, workspace_id)
         except ApiError as exc:
             self.notify(f"board fetch failed: {exc}", severity="error")
             return
@@ -277,9 +400,47 @@ class BoardScreen(Screen[None]):
                 break
         return items
 
+    async def _fetch_stories_by_tags(
+        self,
+        client: Any,
+        workspace_id: str,
+        tag_names: list[str],
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch stories matching any of ``tag_names`` and return the
+        deduplicated union.
+
+        The list endpoint accepts a single ``?tag=name`` filter, so
+        the union is computed client-side: one paginated walk per
+        tag, then dedup by story id keeping insertion order.
+        """
+        seen: set[str] = set()
+        merged: list[dict[str, Any]] = []
+        for tag_name in tag_names:
+            cursor: str | None = None
+            while True:
+                params: dict[str, Any] = {"limit": 200, "tag": tag_name}
+                if cursor is not None:
+                    params["cursor"] = cursor
+                response = await client.get(
+                    f"/workspaces/{workspace_id}/stories",
+                    params=params,
+                )
+                body = response.json()
+                for story in body.get("items", []):
+                    story_id = str(story.get("id", ""))
+                    if story_id and story_id not in seen:
+                        seen.add(story_id)
+                        merged.append(story)
+                cursor = body.get("next_cursor")
+                if cursor is None:
+                    break
+        return merged
+
     def _render_columns(self) -> None:
         """
-        Distribute stories into columns by state.
+        Distribute stories into columns by state, applying the active
+        sort mode within each column.
         """
         by_state: dict[str, list[dict[str, Any]]] = {
             state: [] for state, _ in COLUMN_STATES
@@ -291,12 +452,13 @@ class BoardScreen(Screen[None]):
         for state_key, _title in COLUMN_STATES:
             column = self.query_one(f"#col-{state_key}", BoardColumn)
             tags_lookup = self._tags_by_story
+            ordered = sort_stories(by_state[state_key], self._sort_mode)
             cards = [
                 StoryCard(
                     story,
                     tags=tags_lookup.get(str(story.get("id", ""))),
                 )
-                for story in by_state[state_key]
+                for story in ordered
             ]
             column.set_cards(cards)
 
@@ -445,6 +607,70 @@ class BoardScreen(Screen[None]):
         """
         self.post_message(OpenSearch())
 
+    async def action_open_tag_filter(self) -> None:
+        """
+        Open the tag-filter modal and apply the chosen filter.
+
+        Fetches the workspace tags fresh on each open so newly
+        created tags appear without a board refresh. The picker
+        dismisses with ``None`` (escape, no change), an empty list
+        (clear filter), or a list of ``(tag_id, name)`` tuples
+        (apply). The dismiss callback handles each case so the
+        action method itself does not block on the modal.
+        """
+        client = self.app.client  # type: ignore[attr-defined]
+        workspace_id = str(self._workspace.get("id", ""))
+        try:
+            response = await client.get(f"/workspaces/{workspace_id}/tags")
+        except ApiError as exc:
+            self.notify(f"tag fetch failed: {exc}", severity="error")
+            return
+        tags = list(response.json().get("items", []))
+        initial_ids = {tag_id for tag_id, _ in self._active_tag_filter}
+
+        async def _on_dismiss(chosen: list[tuple[str, str]] | None) -> None:
+            if chosen is None:
+                return
+            self._active_tag_filter = list(chosen)
+            self._update_sub_title()
+            if not chosen:
+                self.notify("filter cleared")
+            else:
+                names = ", ".join(name for _id, name in chosen)
+                self.notify(f"filter: {names}")
+            await self.refresh_data()
+
+        await self.app.push_screen(
+            TagFilterPicker(tags=tags, initial_tag_ids=initial_ids),
+            _on_dismiss,
+        )
+
+    async def action_clear_tag_filter(self) -> None:
+        """
+        Clear the active tag filter and refresh the board.
+        """
+        if not self._active_tag_filter:
+            self.notify("no filter active")
+            return
+        self._active_tag_filter = []
+        self._update_sub_title()
+        self.notify("filter cleared")
+        await self.refresh_data()
+
+    def action_cycle_sort(self) -> None:
+        """
+        Cycle through the supported sort modes.
+        """
+        try:
+            index = SORT_MODE_CYCLE.index(self._sort_mode)
+        except ValueError:
+            index = 0
+        self._sort_mode = SORT_MODE_CYCLE[(index + 1) % len(SORT_MODE_CYCLE)]
+        self._update_sub_title()
+        self._render_columns()
+        self._restore_focus()
+        self.notify(f"sort: {self._sort_mode_label()}")
+
     async def action_show_help(self) -> None:
         """
         Push the shared help overlay with this screen's bindings.
@@ -459,6 +685,13 @@ class BoardScreen(Screen[None]):
         after becomes the markdown description. Leaving the title line
         unchanged (or deleting everything) aborts with a flash so a
         stray ``n`` keypress never creates a junk story.
+
+        Before posting we ask the server for stories with a normalised
+        title equivalent to the proposed one. Any matches push a
+        :class:`DuplicateConfirm` modal so the user can abort the
+        likely duplicate; the create POST runs from the modal's
+        dismiss callback so the action method can return cleanly
+        without requiring an active worker.
         """
         edited = await edit_markdown(
             self.app, NEW_STORY_TEMPLATE, runner=self._editor_runner
@@ -470,6 +703,36 @@ class BoardScreen(Screen[None]):
         if not title or title == PLACEHOLDER_TITLE:
             self.notify("new story aborted: title unchanged")
             return
+        client = self.app.client  # type: ignore[attr-defined]
+        workspace_id = str(self._workspace.get("id", ""))
+        try:
+            similar_response = await client.get(
+                f"/workspaces/{workspace_id}/stories/similar",
+                params={"title": title},
+            )
+            similar = list(similar_response.json().get("items", []))
+        except ApiError as exc:
+            self.notify(f"similar check failed: {exc}", severity="error")
+            return
+        if not similar:
+            await self._post_new_story(title, description)
+            return
+
+        async def _on_dismiss(confirmed: bool | None) -> None:
+            if not confirmed:
+                self.notify("cancelled: similar story exists")
+                return
+            await self._post_new_story(title, description)
+
+        await self.app.push_screen(
+            DuplicateConfirm(entity="story", items=similar),
+            _on_dismiss,
+        )
+
+    async def _post_new_story(self, title: str, description: str) -> None:
+        """
+        POST the create payload, notify, and refetch the board.
+        """
         client = self.app.client  # type: ignore[attr-defined]
         workspace_id = str(self._workspace.get("id", ""))
         payload: dict[str, Any] = {"title": title}

@@ -345,3 +345,36 @@ def test_get_epic_by_key_roundtrip_and_404(client: TestClient, human_auth: Any) 
     )
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "not_found"
+
+
+def test_similar_epics_endpoint_empty_and_match(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    ``GET /workspaces/{id}/epics/similar`` returns an empty items
+    list when nothing matches and the matching epic when one does.
+    """
+    ws = _create_workspace(client, human_auth)
+    empty = client.get(
+        f"/api/v1/workspaces/{ws['id']}/epics/similar?title=Anything",
+        headers=human_auth.headers,
+    )
+    assert empty.status_code == 200
+    assert empty.json() == {"items": [], "next_cursor": None}
+
+    epic = _create_epic(client, human_auth, ws["id"], title="v2 Redesign")
+    matched = client.get(
+        f"/api/v1/workspaces/{ws['id']}/epics/similar",
+        params={"title": "v2-redesign"},
+        headers=human_auth.headers,
+    )
+    assert matched.status_code == 200
+    assert [e["id"] for e in matched.json()["items"]] == [epic["id"]]
+
+
+def test_similar_epics_requires_auth(client: TestClient) -> None:
+    """
+    The endpoint refuses unauthenticated callers.
+    """
+    response = client.get("/api/v1/workspaces/anything/epics/similar?title=x")
+    assert response.status_code == 401

@@ -35,9 +35,14 @@ def test_list_epics_resolves_workspace(mock_api: MockApi, client: McpApiClient) 
 def test_create_epic_posts_payload(mock_api: MockApi, client: McpApiClient) -> None:
     """
     ``create_epic`` resolves the workspace and POSTs title +
-    description.
+    description. Empty similar response means no warnings field.
     """
     mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/epics/similar",
+        body={"items": [], "next_cursor": None},
+    )
     mock_api.json(
         "POST",
         "/workspaces/ws-kan/epics",
@@ -49,8 +54,37 @@ def test_create_epic_posts_payload(mock_api: MockApi, client: McpApiClient) -> N
         {"workspace": "KAN", "title": "v2 redesign", "description": "md"},
     )
     assert result["epic"]["human_id"] == "KAN-4"
+    assert "warnings" not in result
     post = [r for r in mock_api.requests if r.method == "POST"][0]
     assert post.body == {"title": "v2 redesign", "description": "md"}
+
+
+def test_create_epic_includes_warnings_when_similar(
+    mock_api: MockApi, client: McpApiClient
+) -> None:
+    """
+    A non-empty similar response is folded into ``warnings.similar``
+    on the result so the outer Claude can relay the duplicate hint.
+    """
+    similar = epic_body()
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/epics/similar",
+        body={"items": [similar], "next_cursor": None},
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/epics",
+        status_code=201,
+        body=epic_body(human_id="KAN-9", epic_id="epic-9"),
+    )
+    result = _handler("create_epic")(
+        client,
+        {"workspace": "KAN", "title": "v2 redesign"},
+    )
+    assert result["epic"]["human_id"] == "KAN-9"
+    assert result["warnings"] == {"similar": [similar]}
 
 
 def test_update_epic_patches_state(mock_api: MockApi, client: McpApiClient) -> None:

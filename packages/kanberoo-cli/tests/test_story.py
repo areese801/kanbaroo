@@ -10,6 +10,7 @@ nothing to do" short circuit.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -97,6 +98,11 @@ def test_story_create_posts_payload(
     """
     del config_dir
     mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/stories/similar",
+        body={"items": [], "next_cursor": None},
+    )
     mock_api.json(
         "POST",
         "/workspaces/ws-kan/stories",
@@ -414,3 +420,164 @@ def test_story_delete_with_confirmation(
     assert result.exit_code == 0, result.stderr
     delete_reqs = [r for r in mock_api.requests if r.method == "DELETE"]
     assert delete_reqs and delete_reqs[0].headers["if-match"] == "1"
+
+
+def test_story_create_force_skips_prompt_with_similar(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    With ``--force`` the CLI ignores any matches from the similar
+    endpoint and POSTs the story without prompting.
+    """
+    del config_dir
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/stories/similar",
+        body={
+            "items": [_story_body(human_id="KAN-1", story_id="story-1")],
+            "next_cursor": None,
+        },
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/stories",
+        body=_story_body(human_id="KAN-2", story_id="story-2"),
+        status_code=201,
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(
+        app,
+        [
+            "story",
+            "create",
+            "--workspace",
+            "KAN",
+            "--title",
+            "Fix the bug",
+            "--force",
+        ],
+    )
+    assert result.exit_code == 0, result.stderr
+    posts = [r for r in mock_api.requests if r.method == "POST"]
+    assert posts and posts[0].path == "/workspaces/ws-kan/stories"
+
+
+def test_story_create_prompt_accept_proceeds_with_similar(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    With matching similar stories and the user answering ``y`` at
+    the prompt, the CLI proceeds with the create.
+    """
+    del config_dir
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/stories/similar",
+        body={
+            "items": [_story_body(human_id="KAN-1", story_id="story-1")],
+            "next_cursor": None,
+        },
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/stories",
+        body=_story_body(human_id="KAN-2", story_id="story-2"),
+        status_code=201,
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(
+        app,
+        [
+            "story",
+            "create",
+            "--workspace",
+            "KAN",
+            "--title",
+            "Fix the bug",
+        ],
+        input="y\n",
+    )
+    assert result.exit_code == 0, result.stderr
+    posts = [r for r in mock_api.requests if r.method == "POST"]
+    assert posts and posts[0].path == "/workspaces/ws-kan/stories"
+
+
+def test_story_create_prompt_reject_aborts(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    Answering ``n`` at the duplicate prompt aborts with exit 1 and
+    no POST is sent.
+    """
+    del config_dir
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/stories/similar",
+        body={
+            "items": [_story_body(human_id="KAN-1", story_id="story-1")],
+            "next_cursor": None,
+        },
+    )
+    result = runner.invoke(
+        app,
+        [
+            "story",
+            "create",
+            "--workspace",
+            "KAN",
+            "--title",
+            "Fix the bug",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    posts = [
+        r
+        for r in mock_api.requests
+        if r.method == "POST" and r.path == "/workspaces/ws-kan/stories"
+    ]
+    assert posts == []
+
+
+def test_story_create_json_includes_warnings(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    With ``--json`` the CLI never prompts and folds the matches into
+    a ``warnings`` field on the result.
+    """
+    del config_dir
+    similar_story = _story_body(human_id="KAN-1", story_id="story-1")
+    created = _story_body(human_id="KAN-2", story_id="story-2")
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/stories/similar",
+        body={"items": [similar_story], "next_cursor": None},
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/stories",
+        body=created,
+        status_code=201,
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(
+        app,
+        [
+            "story",
+            "create",
+            "--workspace",
+            "KAN",
+            "--title",
+            "Fix the bug",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["id"] == "story-2"
+    assert payload["warnings"] == {"similar": ["story-1"]}

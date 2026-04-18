@@ -4,9 +4,9 @@ Global fuzzy search overlay (milestone 14).
 Pressed from the workspace list or the board with ``/``. The screen
 builds (lazily, on first open and cached for the rest of the session)
 a client-side index of every visible story: (human_id, title, first
-200 chars of description, workspace_key, state, id). Typing in the
-input narrows the result table live; ``enter`` opens the story detail
-for the highlighted row.
+200 chars of description, concatenated comment bodies, workspace_key,
+state, id). Typing in the input narrows the result table live;
+``enter`` opens the story detail for the highlighted row.
 
 Ranking
 -------
@@ -14,15 +14,18 @@ Ranking
 We deliberately avoid a hard runtime dependency on ``rapidfuzz``:
 ``difflib.SequenceMatcher`` from the standard library is more than
 fast enough for the scale phase 1 targets (low thousands of stories,
-local workspace). The scorer computes a weighted ratio over three
+local workspace). The scorer computes a weighted ratio over four
 fields:
 
-* ``human_id``   weight 0.40 (case-folded; exact and prefix matches
+* ``human_id``   weight 0.35 (case-folded; exact and prefix matches
   earn a large bonus so typing ``KAN-12`` scrolls directly to that
   story).
-* ``title``      weight 0.40
-* ``description`` weight 0.20 (only the first 200 chars are indexed
+* ``title``      weight 0.35
+* ``description`` weight 0.15 (only the first 200 chars are indexed
   to keep scoring cheap on long descriptions).
+* ``comments``   weight 0.15 (concatenated comment bodies, capped to
+  500 chars total; surfaces hits whose only signal lives in a
+  comment thread).
 
 A score under ``MIN_SCORE`` is dropped so the table never drowns the
 user in irrelevant hits; an empty query shows the first N rows in the
@@ -31,11 +34,15 @@ index's insertion order, matching the spec's "no-input" landing.
 Live updates
 ------------
 
-Any ``story.*`` WS event invalidates the cached index so the next
-open rebuilds from fresh data. Rebuilding in place while the screen
-is open would risk racing with the user's current query; the cost of
-a full refresh on re-entry is tiny (one paginated fetch per
-workspace) and the code is dramatically simpler.
+Any ``story.*`` or ``comment.*`` WS event invalidates the cached
+index so the next open rebuilds from fresh data. Rebuilding in place
+while the screen is open would risk racing with the user's current
+query; the cost of a full refresh on re-entry is tiny (one paginated
+fetch per workspace plus one comment fetch per story) and the code
+is dramatically simpler. The comment fetch is per-story which is
+quadratic in storyset growth; at single-user scale that's fine, and
+a future revision can fold comments into the story-list response
+once the spec adds the field.
 """
 
 from __future__ import annotations
@@ -56,13 +63,16 @@ from kanberoo_tui.messages import StorySelected
 MAX_VISIBLE_RESULTS = 50
 MIN_SCORE = 0.15
 DESCRIPTION_PREFIX_LENGTH = 200
+COMMENTS_PREFIX_LENGTH = 500
 
-WEIGHT_HUMAN_ID = 0.40
-WEIGHT_TITLE = 0.40
-WEIGHT_DESCRIPTION = 0.20
+WEIGHT_HUMAN_ID = 0.35
+WEIGHT_TITLE = 0.35
+WEIGHT_DESCRIPTION = 0.15
+WEIGHT_COMMENTS = 0.15
 PREFIX_BONUS = 0.35
 
 STORY_EVENT_PREFIX = "story."
+COMMENT_EVENT_PREFIX = "comment."
 
 
 @dataclass
@@ -80,6 +90,7 @@ class IndexedStory:
     workspace_key: str
     state: str
     description_prefix: str
+    comments_blob: str
     story: dict[str, Any]
 
 
@@ -87,11 +98,11 @@ def _score(query: str, entry: IndexedStory) -> float:
     """
     Return the ranked score for ``entry`` against ``query``.
 
-    Blends a weighted average of human_id, title, and description
-    similarity with a prefix-match bonus. Case-folded everywhere so
-    the user never has to match casing to find anything. Returns 0
-    for any entry missing all three fields, which cannot happen in
-    normal operation but keeps the scorer well-defined.
+    Blends a weighted average of human_id, title, description, and
+    comments similarity with a prefix-match bonus. Case-folded
+    everywhere so the user never has to match casing to find anything.
+    Returns 0 for any entry missing all four fields, which cannot
+    happen in normal operation but keeps the scorer well-defined.
     """
     q = query.strip().lower()
     if not q:
@@ -99,15 +110,19 @@ def _score(query: str, entry: IndexedStory) -> float:
     id_ratio = SequenceMatcher(None, q, entry.human_id.lower()).ratio()
     title_ratio = SequenceMatcher(None, q, entry.title.lower()).ratio()
     desc_ratio = SequenceMatcher(None, q, entry.description_prefix.lower()).ratio()
+    comments_ratio = SequenceMatcher(None, q, entry.comments_blob.lower()).ratio()
     total = (
         WEIGHT_HUMAN_ID * id_ratio
         + WEIGHT_TITLE * title_ratio
         + WEIGHT_DESCRIPTION * desc_ratio
+        + WEIGHT_COMMENTS * comments_ratio
     )
     if entry.human_id.lower().startswith(q) or entry.title.lower().startswith(q):
         total = min(1.0, total + PREFIX_BONUS)
     if q in entry.human_id.lower() or q in entry.title.lower():
         total = min(1.0, total + 0.2)
+    if q in entry.comments_blob.lower():
+        total = min(1.0, total + 0.1)
     return total
 
 
@@ -198,10 +213,14 @@ class SearchScreen(Screen[None]):
         Walk every workspace and build the client-side index.
 
         Each workspace contributes a fresh page-walk through
-        ``/workspaces/{id}/stories``; the cost is one HTTP round-trip
-        per workspace for the single-user scale phase 1 targets. A
-        failure on any individual workspace skips that workspace and
-        logs a notification; the index still contains everything else.
+        ``/workspaces/{id}/stories`` plus one
+        ``/stories/{id}/comments`` call per story so comment bodies
+        are searchable too. The cost is roughly O(workspaces *
+        stories * comments_per_story) HTTP calls; at single-user
+        scale that's fine, and a failure on any individual story's
+        comment fetch degrades gracefully (the entry indexes with no
+        comment text). A failure on a whole workspace skips that
+        workspace and logs a notification.
         """
         client = self.app.client  # type: ignore[attr-defined]
         try:
@@ -226,18 +245,47 @@ class SearchScreen(Screen[None]):
                 description = (story.get("description") or "")[
                     :DESCRIPTION_PREFIX_LENGTH
                 ]
+                story_id = str(story.get("id", ""))
+                comments_blob = await self._fetch_comments_blob(client, story_id)
                 index.append(
                     IndexedStory(
-                        id=str(story.get("id", "")),
+                        id=story_id,
                         human_id=str(story.get("human_id", "")),
                         title=str(story.get("title", "")),
                         workspace_key=workspace_key,
                         state=str(story.get("state", "")),
                         description_prefix=description,
+                        comments_blob=comments_blob,
                         story=story,
                     )
                 )
         self._index = index
+
+    async def _fetch_comments_blob(self, client: Any, story_id: str) -> str:
+        """
+        Return concatenated comment bodies for ``story_id``, capped to
+        :data:`COMMENTS_PREFIX_LENGTH` characters.
+
+        Failures fall back to an empty string so a single bad story
+        does not poison the whole index. Callers indexing many
+        stories therefore degrade gracefully rather than raising.
+        """
+        if not story_id:
+            return ""
+        try:
+            response = await client.get(f"/stories/{story_id}/comments")
+        except ApiError:
+            return ""
+        items = response.json().get("items") or []
+        bodies: list[str] = []
+        for comment in items:
+            if not isinstance(comment, dict):
+                continue
+            body = comment.get("body")
+            if isinstance(body, str) and body:
+                bodies.append(body)
+        joined = "\n".join(bodies)
+        return joined[:COMMENTS_PREFIX_LENGTH]
 
     async def _fetch_stories(
         self,
@@ -347,11 +395,14 @@ class SearchScreen(Screen[None]):
 
     async def handle_ws_event(self, event: dict[str, Any]) -> None:
         """
-        Rebuild the index on any ``story.*`` event so live changes
-        show up in subsequent searches.
+        Rebuild the index on any ``story.*`` or ``comment.*`` event so
+        live changes show up in subsequent searches.
         """
         event_type = str(event.get("event_type", ""))
-        if not event_type.startswith(STORY_EVENT_PREFIX):
+        if not (
+            event_type.startswith(STORY_EVENT_PREFIX)
+            or event_type.startswith(COMMENT_EVENT_PREFIX)
+        ):
             return
         await self._build_index()
         self._rank_and_render(self._last_query)

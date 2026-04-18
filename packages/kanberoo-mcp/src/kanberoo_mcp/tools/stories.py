@@ -86,9 +86,22 @@ def _create_story(client: McpApiClient, args: dict[str, Any]) -> dict[str, Any]:
     Handler for ``create_story``. Resolves the workspace, resolves the
     optional epic reference (if the caller passed a human id or UUID),
     and POSTs the payload.
+
+    Always queries ``/workspaces/{id}/stories/similar`` first; the
+    matches are reported as a ``warnings.similar`` field on the
+    result so the outer Claude can relay the warning to the user.
+    Creation itself is never blocked here: the agent is expected to
+    surface the duplicate concern, not unilaterally refuse the
+    request.
     """
     workspace = resolve_workspace(client, args["workspace"])
-    payload: dict[str, Any] = {"title": args["title"]}
+    title = args["title"]
+    similar_response = client.get(
+        f"/workspaces/{workspace['id']}/stories/similar",
+        params={"title": title},
+    )
+    similar = list(similar_response.json().get("items", []))
+    payload: dict[str, Any] = {"title": title}
     if args.get("description") is not None:
         payload["description"] = args["description"]
     if args.get("priority") is not None:
@@ -100,7 +113,13 @@ def _create_story(client: McpApiClient, args: dict[str, Any]) -> dict[str, Any]:
         json=payload,
     )
     created: dict[str, Any] = response.json()
-    return {"message": f"created story {created['human_id']}", "story": created}
+    result: dict[str, Any] = {
+        "message": f"created story {created['human_id']}",
+        "story": created,
+    }
+    if similar:
+        result["warnings"] = {"similar": similar}
+    return result
 
 
 def _update_story(client: McpApiClient, args: dict[str, Any]) -> dict[str, Any]:

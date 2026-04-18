@@ -40,6 +40,7 @@ from kanberoo_core.services.exceptions import (
     ValidationError,
     VersionConflictError,
 )
+from kanberoo_core.text import normalize_for_comparison
 from kanberoo_core.time import utc_now_iso
 
 DEFAULT_PAGE_LIMIT = 50
@@ -416,6 +417,42 @@ def soft_delete_story(
         payload=after,
     )
     return story
+
+
+def find_similar_stories(
+    session: Session,
+    *,
+    workspace_id: str,
+    title: str,
+    include_deleted: bool = False,
+) -> list[Story]:
+    """
+    Return stories in ``workspace_id`` whose title normalises to the
+    same canonical form as ``title``.
+
+    The comparison key comes from
+    :func:`kanberoo_core.text.normalize_for_comparison`, so casing,
+    punctuation, and whitespace differences collide while distinct
+    word content does not. Returns an empty list when ``title``
+    normalises to an empty string (no signal to compare against).
+
+    At single-user scale loading every workspace title and filtering
+    in Python is fine. If volume grows, store the normalised form
+    in a dedicated column and add an index over
+    ``(workspace_id, normalized_title)`` so this query becomes a
+    single equality lookup.
+    """
+    needle = normalize_for_comparison(title)
+    if not needle:
+        return []
+    stmt = select(Story).where(Story.workspace_id == workspace_id)
+    if not include_deleted:
+        stmt = live(stmt, Story)
+    stmt = stmt.order_by(Story.id)
+    candidates = list(session.execute(stmt).scalars().all())
+    return [
+        story for story in candidates if normalize_for_comparison(story.title) == needle
+    ]
 
 
 def transition_story(

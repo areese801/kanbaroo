@@ -4,6 +4,7 @@ Tests for ``kb tag``.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -122,6 +123,11 @@ def test_tag_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     del config_dir
     mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/tags/similar",
+        body={"items": []},
+    )
+    mock_api.json(
         "POST",
         "/workspaces/ws-kan/tags",
         body=_tag_body(),
@@ -133,6 +139,92 @@ def test_tag_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     )
     assert result.exit_code == 0, result.stderr
     assert mock_api.requests[-1].body == {"name": "bug", "color": "#cc3333"}
+
+
+def test_tag_create_force_skips_prompt_with_similar(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    With ``--force`` the CLI ignores duplicate matches.
+    """
+    del config_dir
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/tags/similar",
+        body={"items": [_tag_body(name="UI")]},
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/tags",
+        body=_tag_body(name="ui"),
+        status_code=201,
+    )
+    result = runner.invoke(
+        app,
+        ["tag", "create", "ui", "--workspace", "KAN", "--force"],
+    )
+    assert result.exit_code == 0, result.stderr
+    posts = [r for r in mock_api.requests if r.method == "POST"]
+    assert posts and posts[0].path == "/workspaces/ws-kan/tags"
+
+
+def test_tag_create_prompt_reject_aborts(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    Answering ``n`` aborts the create.
+    """
+    del config_dir
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/tags/similar",
+        body={"items": [_tag_body(name="UI")]},
+    )
+    result = runner.invoke(
+        app,
+        ["tag", "create", "ui", "--workspace", "KAN"],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    posts = [
+        r
+        for r in mock_api.requests
+        if r.method == "POST" and r.path == "/workspaces/ws-kan/tags"
+    ]
+    assert posts == []
+
+
+def test_tag_create_json_includes_warnings(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    With ``--json`` the CLI never prompts and folds the matches into
+    ``warnings`` on the result.
+    """
+    del config_dir
+    similar = _tag_body(name="UI")
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/tags/similar",
+        body={"items": [similar]},
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/tags",
+        body=_tag_body(name="ui", tag_id="tag-2"),
+        status_code=201,
+    )
+    result = runner.invoke(
+        app,
+        ["tag", "create", "ui", "--workspace", "KAN", "--json"],
+    )
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["id"] == "tag-2"
+    assert payload["warnings"] == {"similar": [similar["id"]]}
 
 
 def test_tag_rename(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:

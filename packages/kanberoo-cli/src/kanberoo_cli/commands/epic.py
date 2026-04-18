@@ -9,16 +9,24 @@ so the user never has to type a UUID.
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from kanberoo_cli.client import ApiError
 from kanberoo_cli.context import build_client, require_config
-from kanberoo_cli.rendering import exit_on_api_error, print_json, print_table
+from kanberoo_cli.rendering import (
+    exit_on_api_error,
+    print_json,
+    print_table,
+    stdout_console,
+)
 from kanberoo_cli.resolvers import (
     require_effective_workspace,
     resolve_epic,
     resolve_workspace,
 )
+from kanberoo_cli.similar import fetch_similar_entities, print_similar_entities
 
 app = typer.Typer(
     name="epic",
@@ -117,6 +125,11 @@ def create_epic(
         "--description",
         help="Optional markdown description.",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Skip the duplicate-title prompt and create the epic regardless.",
+    ),
     as_json: bool = typer.Option(
         False,
         "--json",
@@ -125,15 +138,34 @@ def create_epic(
 ) -> None:
     """
     Create a new epic in ``workspace``.
+
+    Mirrors ``kb story create``: a normalised-title check runs against
+    the workspace before posting and warns the user about likely
+    duplicates. ``--force`` skips the prompt; ``--json`` never prompts
+    but folds the matches into a ``warnings`` field.
     """
     config = require_config()
     workspace_ref = require_effective_workspace(workspace, config)
     payload: dict[str, object] = {"title": title}
     if description is not None:
         payload["description"] = description
+    similar: list[dict[str, Any]] = []
     with build_client(config) as client:
         try:
             ws = resolve_workspace(client, workspace_ref)
+            similar = fetch_similar_entities(
+                client,
+                workspace_id=str(ws["id"]),
+                resource="epics",
+                field_name="title",
+                value=title,
+            )
+            if similar and not as_json and not force:
+                print_similar_entities(similar, label_key="human_id", entity="epic")
+                confirmed = typer.confirm("Create anyway?", default=False)
+                if not confirmed:
+                    stdout_console.print("aborted: existing entity has a similar name")
+                    raise typer.Exit(code=1)
             response = client.post(
                 f"/workspaces/{ws['id']}/epics",
                 json=payload,
@@ -143,6 +175,8 @@ def create_epic(
         body = response.json()
 
     if as_json:
+        if similar:
+            body = {**body, "warnings": {"similar": [s["id"] for s in similar]}}
         print_json(body)
         return
     print_table(

@@ -42,6 +42,7 @@ from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
 )
+from kanberoo_core.text import normalize_for_comparison
 from kanberoo_core.time import utc_now_iso
 
 
@@ -277,6 +278,34 @@ def soft_delete_tag(
         payload=after,
     )
     return tag
+
+
+def find_similar_tags(
+    session: Session,
+    *,
+    workspace_id: str,
+    name: str,
+    include_deleted: bool = False,
+) -> list[Tag]:
+    """
+    Return tags in ``workspace_id`` whose name normalises to the same
+    canonical form as ``name``.
+
+    Mirrors :func:`kanberoo_core.services.stories.find_similar_stories`
+    in spirit. Tags already enforce ``UNIQUE(workspace_id, name)``,
+    so an exact-name lookup would return at most one row; this helper
+    catches the visually-similar case (``UI`` vs ``ui`` vs ``u-i``)
+    where the unique constraint would not.
+    """
+    needle = normalize_for_comparison(name)
+    if not needle:
+        return []
+    stmt = select(Tag).where(Tag.workspace_id == workspace_id)
+    if not include_deleted:
+        stmt = live(stmt, Tag)
+    stmt = stmt.order_by(Tag.id)
+    candidates = list(session.execute(stmt).scalars().all())
+    return [tag for tag in candidates if normalize_for_comparison(tag.name) == needle]
 
 
 def add_tags_to_story(

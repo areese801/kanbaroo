@@ -512,3 +512,44 @@ def test_tag_filter_is_workspace_scoped(client: TestClient, human_auth: Any) -> 
     )
     items = response.json()["items"]
     assert [s["id"] for s in items] == [story_a["id"]]
+
+
+def test_similar_stories_endpoint_empty(client: TestClient, human_auth: Any) -> None:
+    """
+    With no stories the endpoint returns 200 and an empty items list.
+    """
+    ws = _create_workspace(client, human_auth)
+    response = client.get(
+        f"/api/v1/workspaces/{ws['id']}/stories/similar?title=Anything",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"items": [], "next_cursor": None}
+
+
+def test_similar_stories_endpoint_matches_normalised_title(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    Stories whose normalised title matches the query are returned.
+    Casing and punctuation differences still match.
+    """
+    ws = _create_workspace(client, human_auth)
+    story = _create_story(client, human_auth, ws["id"], title="Fix the bug")
+    response = client.get(
+        f"/api/v1/workspaces/{ws['id']}/stories/similar",
+        params={"title": "fix-the-bug"},
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [s["id"] for s in items] == [story["id"]]
+
+
+def test_similar_stories_requires_auth(client: TestClient) -> None:
+    """
+    The endpoint refuses unauthenticated callers.
+    """
+    response = client.get("/api/v1/workspaces/anything/stories/similar?title=x")
+    assert response.status_code == 401

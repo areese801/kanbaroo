@@ -65,6 +65,37 @@ def list_epics(
     )
 
 
+@workspace_router.get(
+    "/{workspace_id}/epics/similar",
+    response_model=EpicListResponse,
+)
+def find_similar_epics(
+    workspace_id: str,
+    title: str = Query(..., description="Title to compare against."),
+    include_deleted: bool = Query(False),
+    session: Session = Depends(get_session),
+    _actor: Actor = Depends(resolve_actor),
+) -> EpicListResponse:
+    """
+    Return epics in ``workspace_id`` whose title is normalised
+    equivalent to ``title``.
+
+    Mirrors ``GET /workspaces/{id}/stories/similar``; see that
+    endpoint's docstring for the normalisation rules and intended
+    use case (warn-on-create at the client).
+    """
+    rows = epic_service.find_similar_epics(
+        session,
+        workspace_id=workspace_id,
+        title=title,
+        include_deleted=include_deleted,
+    )
+    return EpicListResponse(
+        items=[EpicRead.model_validate(row) for row in rows],
+        next_cursor=None,
+    )
+
+
 @workspace_router.post(
     "/{workspace_id}/epics",
     response_model=EpicRead,
