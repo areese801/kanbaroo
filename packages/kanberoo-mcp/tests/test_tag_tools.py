@@ -25,7 +25,7 @@ def test_list_tags_resolves_workspace(mock_api: MockApi, client: McpApiClient) -
     """
     The workspace key is resolved to a UUID before listing tags.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     mock_api.json(
         "GET",
         "/workspaces/ws-kan/tags",

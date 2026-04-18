@@ -3,10 +3,10 @@ Human-id and key resolvers for the Kanberoo MCP server.
 
 Outer Claude addresses entities by their human-friendly references:
 workspaces by their short key (``KAN``) or UUID, stories and epics by
-their ``{KEY}-{N}`` human identifier (``KAN-123``) or UUID. The REST
-API serves by-key lookups for stories and epics directly; for
-workspaces we fall back to scanning the workspace list because no
-by-key endpoint exists yet (noted in task_complete as a REST-side gap).
+their ``{KEY}-{N}`` human identifier (``KAN-123``) or UUID. Every
+resolver maps to the matching ``/by-key`` REST endpoint when the
+reference looks like a key or human id, and to the direct UUID
+endpoint otherwise.
 
 Every resolver returns the canonical entity JSON body (not just a
 UUID) so callers that already needed the full body avoid a second
@@ -34,40 +34,31 @@ def resolve_workspace(client: McpApiClient, key_or_id: str) -> dict[str, Any]:
     """
     Resolve a workspace by short key or UUID and return its full body.
 
-    Tries ``GET /workspaces/{id}`` first (cheap in the common case of a
-    UUID); on 404 falls back to listing workspaces and matching by
-    ``key``. Raises :class:`McpApiRequestError` with ``code="not_found"``
-    if neither lookup succeeds.
+    Workspace keys do not contain dashes (spec Appendix B and the
+    conventional ``KAN``/``DATA`` shape), whereas UUIDs do. Treat any
+    dashless reference as a key and route it straight to
+    ``GET /workspaces/by-key/{key}``. Otherwise try the direct UUID
+    endpoint first and fall back to the by-key endpoint for the rare
+    hyphenated-key case. A 404 from the final lookup surfaces as
+    :class:`McpApiRequestError` with ``code="not_found"``.
     """
+    if "-" not in key_or_id:
+        response = client.get(f"/workspaces/by-key/{key_or_id}")
+        body: dict[str, Any] = response.json()
+        return body
+
     try:
         response = client.get(f"/workspaces/{key_or_id}")
     except McpApiRequestError as exc:
         if exc.code != "not_found":
             raise
     else:
-        body: dict[str, Any] = response.json()
-        return body
+        direct: dict[str, Any] = response.json()
+        return direct
 
-    cursor: str | None = None
-    while True:
-        params: dict[str, Any] = {"limit": 200}
-        if cursor is not None:
-            params["cursor"] = cursor
-        response = client.get("/workspaces", params=params)
-        page = response.json()
-        for item in page["items"]:
-            if item["key"] == key_or_id:
-                hit: dict[str, Any] = item
-                return hit
-        cursor = page.get("next_cursor")
-        if cursor is None:
-            break
-    raise McpApiRequestError(
-        status_code=404,
-        code="not_found",
-        message=f"workspace {key_or_id!r} not found",
-        details={"key_or_id": key_or_id},
-    )
+    response = client.get(f"/workspaces/by-key/{key_or_id}")
+    fallback: dict[str, Any] = response.json()
+    return fallback
 
 
 def resolve_story(client: McpApiClient, ref: str) -> dict[str, Any]:

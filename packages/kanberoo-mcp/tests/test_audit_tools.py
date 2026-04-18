@@ -64,7 +64,7 @@ def test_get_audit_trail_workspace_reference(
     """
     ``workspace/KAN`` resolves to the workspace UUID.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     mock_api.json(
         "GET",
         "/audit/entity/workspace/ws-kan",
