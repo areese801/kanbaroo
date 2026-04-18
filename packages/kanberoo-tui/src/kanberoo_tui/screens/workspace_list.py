@@ -30,7 +30,12 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
 from kanberoo_tui.client import ApiError
-from kanberoo_tui.messages import OpenAuditFeed, OpenSearch, WorkspaceSelected
+from kanberoo_tui.messages import (
+    OpenAuditFeed,
+    OpenEpicList,
+    OpenSearch,
+    WorkspaceSelected,
+)
 from kanberoo_tui.widgets.help_modal import KeybindingHelp
 
 WORKSPACE_EVENT_PREFIX = "workspace."
@@ -38,6 +43,7 @@ WORKSPACE_EVENT_PREFIX = "workspace."
 HELP_ROWS: list[tuple[str, str]] = [
     ("j / k", "move cursor"),
     ("enter / l / right", "open workspace board"),
+    ("E", "open epic list"),
     ("/", "fuzzy search"),
     ("a", "global audit feed"),
     ("r", "refresh list"),
@@ -63,6 +69,7 @@ class WorkspaceListScreen(Screen[None]):
         Binding("enter", "open_selected", "Open", priority=True),
         Binding("slash", "open_search", "Search", show=False),
         Binding("a", "open_audit_feed", "Audit"),
+        Binding("E", "open_epic_list", "Epics", show=False),
         Binding("r", "refresh_list", "Refresh"),
         Binding("?", "show_help", "Help", show=False),
         Binding("q", "quit", "Quit"),
@@ -263,6 +270,31 @@ class WorkspaceListScreen(Screen[None]):
         Ask the app to push the global audit feed.
         """
         self.post_message(OpenAuditFeed())
+
+    def action_open_epic_list(self) -> None:
+        """
+        Ask the app to push the epic list for the highlighted row.
+
+        Does nothing when there are no rows yet: pressing ``E`` on an
+        empty list is a no-op rather than an error.
+        """
+        if not self._workspaces:
+            return
+        table = self.query_one("#ws-table", DataTable)
+        try:
+            cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        except Exception:  # noqa: BLE001
+            return
+        ws_id = cell_key.row_key.value
+        if ws_id is None:
+            return
+        workspace = next(
+            (ws for ws in self._workspaces if str(ws.get("id")) == ws_id),
+            None,
+        )
+        if workspace is None:
+            return
+        self.post_message(OpenEpicList(workspace))
 
     async def action_show_help(self) -> None:
         """
