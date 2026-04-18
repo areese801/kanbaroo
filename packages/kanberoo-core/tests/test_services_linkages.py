@@ -1,12 +1,12 @@
 """
 Service-layer tests for linkages.
 
-Covers: automatic ``blocks`` ↔ ``is_blocked_by`` mirroring (and the
-deliberate non-mirroring of ``duplicates``/``relates_to``),
-self-linkage rejection, duplicate rejection, cross-workspace linking
-allowed, and the audit invariant that exactly one ``created`` /
-``soft_deleted`` row is emitted for the forward linkage while the
-mirror is silent.
+Covers: automatic mirroring of ``blocks`` / ``is_blocked_by`` and
+``duplicates`` / ``is_duplicated_by`` pairs, deliberate non-mirroring
+of ``relates_to``, self-linkage rejection, duplicate rejection,
+cross-workspace linking allowed, and the audit invariant that exactly
+one ``created`` / ``soft_deleted`` row is emitted for the forward
+linkage while the mirror is silent.
 """
 
 import pytest
@@ -157,13 +157,13 @@ def test_relates_to_is_not_mirrored(session: Session) -> None:
     assert len(_all_linkages(session)) == 1
 
 
-def test_duplicates_is_not_mirrored(session: Session) -> None:
+def test_duplicates_creates_mirror_atomically(session: Session) -> None:
     """
-    ``duplicates`` is left unidirectional; no
-    ``is_duplicated_by`` is auto-created.
+    Creating a ``duplicates`` linkage atomically writes the
+    ``is_duplicated_by`` mirror on the other endpoint.
     """
     a, b = _two_stories(session)
-    linkage_service.create_linkage(
+    forward = linkage_service.create_linkage(
         session,
         actor=HUMAN,
         payload=LinkageCreate(
@@ -175,9 +175,80 @@ def test_duplicates_is_not_mirrored(session: Session) -> None:
         ),
     )
     session.commit()
-    rows = _all_linkages(session)
-    assert len(rows) == 1
-    assert rows[0].link_type == LinkType.DUPLICATES
+
+    rows = _all_linkages(session, include_deleted=True)
+    assert len(rows) == 2
+    by_type = {r.link_type: r for r in rows}
+    assert LinkType.DUPLICATES in by_type and LinkType.IS_DUPLICATED_BY in by_type
+    mirror = by_type[LinkType.IS_DUPLICATED_BY]
+    assert mirror.source_id == b and mirror.target_id == a
+    assert forward.link_type == LinkType.DUPLICATES
+
+
+def test_duplicates_emits_single_audit_for_forward(session: Session) -> None:
+    """
+    Only the forward ``duplicates`` linkage emits a ``created`` audit
+    row; the ``is_duplicated_by`` mirror is silent.
+    """
+    a, b = _two_stories(session)
+    forward = linkage_service.create_linkage(
+        session,
+        actor=HUMAN,
+        payload=LinkageCreate(
+            source_type=LinkEndpointType.STORY,
+            source_id=a,
+            target_type=LinkEndpointType.STORY,
+            target_id=b,
+            link_type=LinkType.DUPLICATES,
+        ),
+    )
+    session.commit()
+
+    linkage_events = (
+        session.query(AuditEvent)
+        .filter(AuditEvent.entity_type == AuditEntityType.LINKAGE)
+        .all()
+    )
+    assert len(linkage_events) == 1
+    assert linkage_events[0].entity_id == forward.id
+
+
+def test_duplicates_delete_cascades_to_mirror(session: Session) -> None:
+    """
+    Soft-deleting a ``duplicates`` linkage also soft-deletes its
+    ``is_duplicated_by`` mirror. Exactly one audit row is emitted.
+    """
+    a, b = _two_stories(session)
+    forward = linkage_service.create_linkage(
+        session,
+        actor=HUMAN,
+        payload=LinkageCreate(
+            source_type=LinkEndpointType.STORY,
+            source_id=a,
+            target_type=LinkEndpointType.STORY,
+            target_id=b,
+            link_type=LinkType.DUPLICATES,
+        ),
+    )
+    session.commit()
+
+    linkage_service.delete_linkage(session, actor=HUMAN, linkage_id=forward.id)
+    session.commit()
+
+    rows = _all_linkages(session, include_deleted=True)
+    assert len(rows) == 2
+    assert all(r.deleted_at is not None for r in rows)
+
+    delete_events = (
+        session.query(AuditEvent)
+        .filter(
+            AuditEvent.entity_type == AuditEntityType.LINKAGE,
+            AuditEvent.action == "soft_deleted",
+        )
+        .all()
+    )
+    assert len(delete_events) == 1
+    assert delete_events[0].entity_id == forward.id
 
 
 def test_self_linkage_rejected(session: Session) -> None:
