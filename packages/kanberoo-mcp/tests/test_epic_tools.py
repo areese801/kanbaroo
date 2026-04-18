@@ -22,7 +22,7 @@ def test_list_epics_resolves_workspace(mock_api: MockApi, client: McpApiClient) 
     ``list_epics`` resolves the workspace key first and returns the
     server's paginated envelope unchanged.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     mock_api.json(
         "GET",
         "/workspaces/ws-kan/epics",
@@ -37,7 +37,7 @@ def test_create_epic_posts_payload(mock_api: MockApi, client: McpApiClient) -> N
     ``create_epic`` resolves the workspace and POSTs title +
     description.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     mock_api.json(
         "POST",
         "/workspaces/ws-kan/epics",

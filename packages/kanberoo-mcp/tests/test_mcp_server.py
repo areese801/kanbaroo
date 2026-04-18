@@ -63,7 +63,7 @@ def test_call_tool_happy_path_returns_structured_content(
     """
     A successful tool call produces structured content and non-error.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     transport = mock_api.transport()
 
     def _factory() -> McpApiClient:
@@ -89,15 +89,10 @@ def test_call_tool_api_error_translated_to_error_result(
     """
     mock_api.error(
         "GET",
-        "/workspaces/MISSING",
+        "/workspaces/by-key/MISSING",
         status_code=404,
         code="not_found",
         message="workspace missing",
-    )
-    mock_api.json(
-        "GET",
-        "/workspaces",
-        body={"items": [], "next_cursor": None},
     )
     transport = mock_api.transport()
 

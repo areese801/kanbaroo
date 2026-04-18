@@ -54,32 +54,43 @@ def test_list_workspaces_passes_limit_and_cursor(
 
 def test_get_workspace_resolves_by_key(mock_api: MockApi, client: McpApiClient) -> None:
     """
-    Passing a workspace key hits ``GET /workspaces/{key}`` directly.
+    A key-shaped reference goes straight to ``/workspaces/by-key/{key}``.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     result = _handler("get_workspace")(client, {"workspace": "KAN"})
     assert result["key"] == "KAN"
+    assert mock_api.requests[-1].path == "/workspaces/by-key/KAN"
 
 
-def test_get_workspace_falls_back_to_list_scan(
+def test_get_workspace_resolves_uuid_via_direct_endpoint(
     mock_api: MockApi, client: McpApiClient
 ) -> None:
     """
-    When ``GET /workspaces/{key}`` returns 404 the resolver scans the
-    list and matches on ``key``. This is the gap where the REST API
-    has no /workspaces/by-key endpoint yet.
+    A UUID-shaped reference tries ``GET /workspaces/{id}`` first.
+    """
+    uuid = "0191a3c0-1111-7000-8000-000000000001"
+    mock_api.json("GET", f"/workspaces/{uuid}", body=ws_body("KAN"))
+    result = _handler("get_workspace")(client, {"workspace": uuid})
+    assert result["key"] == "KAN"
+    assert mock_api.requests[-1].path == f"/workspaces/{uuid}"
+
+
+def test_get_workspace_uuid_falls_back_to_by_key(
+    mock_api: MockApi, client: McpApiClient
+) -> None:
+    """
+    A reference that looks UUID-shaped but 404s on the direct endpoint
+    retries via the by-key endpoint. Covers the edge case of a key
+    that happens to contain a dash.
     """
     mock_api.error(
         "GET",
-        "/workspaces/KAN",
+        "/workspaces/KAN-ALT",
         status_code=404,
         code="not_found",
         message="not found",
     )
-    mock_api.json(
-        "GET",
-        "/workspaces",
-        body={"items": [ws_body("KAN")], "next_cursor": None},
-    )
-    result = _handler("get_workspace")(client, {"workspace": "KAN"})
-    assert result["id"] == "ws-kan"
+    mock_api.json("GET", "/workspaces/by-key/KAN-ALT", body=ws_body("KAN-ALT"))
+    result = _handler("get_workspace")(client, {"workspace": "KAN-ALT"})
+    assert result["key"] == "KAN-ALT"
+    assert mock_api.requests[-1].path == "/workspaces/by-key/KAN-ALT"

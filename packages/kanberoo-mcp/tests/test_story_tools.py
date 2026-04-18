@@ -84,7 +84,7 @@ def test_list_stories_resolves_workspace_and_epic(
     Workspace key resolves to a UUID and epic human id resolves to a
     UUID before either hits the filter query string.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     mock_api.json("GET", "/epics/by-key/KAN-4", body=epic_body())
     mock_api.json(
         "GET",
@@ -120,7 +120,7 @@ def test_create_story_resolves_epic_human_id(
     """
     A human-id epic reference resolves to a UUID before the POST.
     """
-    mock_api.json("GET", "/workspaces/KAN", body=ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
     mock_api.json("GET", "/epics/by-key/KAN-4", body=epic_body())
     mock_api.json(
         "POST",
