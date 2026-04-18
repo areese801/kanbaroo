@@ -159,6 +159,17 @@ class BoardScreen(Screen[None]):
         return self._workspace
 
     @property
+    def current_workspace(self) -> dict[str, Any]:
+        """
+        Return the workspace this screen is scoped to.
+
+        Exposed for the app's global ``E`` binding, which walks the
+        screen stack looking for the effective workspace without
+        touching internal state.
+        """
+        return self._workspace
+
+    @property
     def stories(self) -> list[dict[str, Any]]:
         """
         Return the current stories list.
@@ -176,7 +187,8 @@ class BoardScreen(Screen[None]):
         """
         Register as the WS listener and load the board data.
         """
-        self.sub_title = str(self._workspace.get("name", ""))
+        key = str(self._workspace.get("key", ""))
+        self.sub_title = f"{key} - Board" if key else "Board"
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
         await self.refresh_data()
 
@@ -288,24 +300,48 @@ class BoardScreen(Screen[None]):
         self._active_row = max(0, min(self._active_row, len(cards) - 1))
         return cards[self._active_row]
 
+    def _next_non_empty_column(self, start: int, step: int) -> int | None:
+        """
+        Return the next column index with at least one card.
+
+        Walks ``step`` at a time from ``start`` (exclusive) and returns
+        the first index whose column has cards, or ``None`` when no
+        such column exists within the board bounds.
+        """
+        index = start + step
+        while 0 <= index < len(COLUMN_STATES):
+            if self._column_at(index).cards:
+                return index
+            index += step
+        return None
+
     def action_focus_next_column(self) -> None:
         """
-        Focus the next column's card at the same row (clamped).
+        Focus the next non-empty column's card at the same row.
+
+        Columns with no cards are skipped so a sparse board does not
+        force multiple ``l`` presses to step over gaps. A no-op when
+        every column to the right is empty.
         """
-        if self._active_col + 1 >= len(COLUMN_STATES):
+        target = self._next_non_empty_column(self._active_col, 1)
+        if target is None:
             return
-        self._active_col += 1
+        self._active_col = target
         card = self._focused_card()
         if card is not None:
             card.focus()
 
     def action_focus_prev_column(self) -> None:
         """
-        Focus the previous column's card at the same row (clamped).
+        Focus the previous non-empty column's card at the same row.
+
+        Mirror of :meth:`action_focus_next_column`; no-ops when every
+        column to the left is empty.
         """
-        if self._active_col - 1 < 0:
+        target = self._next_non_empty_column(self._active_col, -1)
+        if target is None:
             return
-        self._active_col -= 1
+        self._active_col = target
         card = self._focused_card()
         if card is not None:
             card.focus()

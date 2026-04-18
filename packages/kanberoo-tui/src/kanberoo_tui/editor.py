@@ -10,10 +10,11 @@ does not have:
 1. The app is painting the terminal. It must release it while the
    editor runs so the user sees the raw shell, and re-acquire it
    afterward. :meth:`textual.app.App.suspend` is Textual's built-in
-   context manager for exactly this; it is synchronous, so we drive it
-   from a worker thread via :func:`asyncio.to_thread` and the UI
-   event loop stays responsive for anything (WebSocket frames, other
-   screens) happening under it.
+   context manager for exactly this, and it must be entered on the
+   event loop thread (Textual's driver detach/attach expects that).
+   The blocking :func:`subprocess.run` runs inside the suspend block
+   via :func:`asyncio.to_thread` so the event loop stays responsive
+   to queued WebSocket frames.
 2. Tests cannot rely on a real editor subprocess. The helper takes a
    ``runner`` injection so test code can swap in a callable that
    rewrites the temp file directly, same shape as the CLI's
@@ -46,26 +47,28 @@ async def _default_runner(app: App[Any], path: Path) -> None:
     """
     Default runner: suspend the Textual app and launch ``$EDITOR``.
 
-    ``with app.suspend()`` is a synchronous context manager that
-    redirects stdout/stderr back to the real terminal and blocks until
-    the wrapped code returns; driving it from a worker thread via
-    :func:`asyncio.to_thread` keeps the event loop free to queue any
-    WebSocket frames that arrive while the editor is open. Drivers
-    that do not support suspension (notably the headless driver used
-    by Textual's ``run_test``) raise :class:`SuspendNotSupported`; we
-    fall back to invoking the editor without suspending so the helper
-    still works in that environment.
+    Earlier revisions wrapped ``with app.suspend():`` inside
+    :func:`asyncio.to_thread`; entering that context manager from a
+    worker thread left the terminal state inconsistent when the editor
+    exited, because Textual's driver attach/detach logic assumes it
+    runs on the event loop thread. The current shape enters
+    ``app.suspend()`` on the event loop and only offloads the blocking
+    :func:`subprocess.run` to a thread, so the loop stays free for WS
+    frames while the editor is open and suspend/resume unwind on the
+    thread Textual expects.
+
+    Drivers that do not support suspension (notably the headless
+    driver used by Textual's ``run_test``) raise
+    :class:`SuspendNotSupported`; we fall back to invoking the editor
+    without suspending so the helper still works in that environment.
     """
     editor = os.environ.get("EDITOR", DEFAULT_EDITOR)
-
-    def _run() -> None:
-        try:
-            with app.suspend():
-                subprocess.run([editor, str(path)], check=True)
-        except SuspendNotSupported:
-            subprocess.run([editor, str(path)], check=True)
-
-    await asyncio.to_thread(_run)
+    try:
+        with app.suspend():
+            await asyncio.to_thread(subprocess.run, [editor, str(path)], check=True)
+    except SuspendNotSupported:
+        await asyncio.to_thread(subprocess.run, [editor, str(path)], check=True)
+    app.refresh()
 
 
 async def edit_markdown(

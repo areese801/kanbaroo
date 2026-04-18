@@ -37,6 +37,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from kanberoo_tui.client import ApiError, ApiRequestError
 from kanberoo_tui.widgets.help_modal import KeybindingHelp
+from kanberoo_tui.widgets.story_card import actor_badge
 
 MAX_ROWS = 500
 FETCH_LIMIT = 50
@@ -98,6 +99,7 @@ class AuditFeedScreen(Screen[None]):
         """
         Build the table, register for WS events, fetch the first page.
         """
+        self.sub_title = "Audit"
         body = self.query_one("#audit-body", Vertical)
         table: DataTable[str] = DataTable(
             id="audit-table", cursor_type="row", zebra_stripes=True
@@ -237,7 +239,9 @@ def _event_row(event: dict[str, Any]) -> tuple[str, str, str, str, str]:
     Convert an event envelope into the five display cells.
     """
     when = str(event.get("occurred_at", ""))
-    actor = f"{event.get('actor_type', '?')}:{event.get('actor_id', '?')}"
+    actor_type = str(event.get("actor_type", "?"))
+    actor_id = str(event.get("actor_id", "?"))
+    actor = f"{actor_badge(actor_type)} {actor_id}"
     action = str(event.get("event_type", event.get("action", "")))
     entity = str(event.get("entity_type", ""))
     entity_id = str(event.get("entity_id", ""))
