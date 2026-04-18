@@ -26,6 +26,13 @@ row for the forward linkage. The mirror row (when one exists) does
 **not** get its own audit event. ``delete_linkage`` likewise emits
 exactly one ``soft_deleted`` row for the forward end; the mirror
 cascade is an implementation detail.
+
+Event contract: every ``create_linkage`` publishes exactly one
+``{source_type}.linked`` event (``story.linked`` when the source is a
+story, ``epic.linked`` when the source is an epic). ``delete_linkage``
+publishes the matching ``{source_type}.unlinked`` event. The mirror
+row is silent on the event stream for the same reason it is silent in
+the audit log: a single logical linkage yields a single logical event.
 """
 
 from typing import Any
@@ -46,6 +53,7 @@ from kanberoo_core.models.story import Story
 from kanberoo_core.queries import live
 from kanberoo_core.schemas.linkage import LinkageCreate, LinkageRead
 from kanberoo_core.services.audit import emit_audit
+from kanberoo_core.services.events import publish_event
 from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
@@ -245,6 +253,7 @@ def create_linkage(
 
     session.flush()
 
+    after = _dump(forward)
     emit_audit(
         session,
         actor=actor,
@@ -252,7 +261,16 @@ def create_linkage(
         entity_id=forward.id,
         action=AuditAction.CREATED,
         before=None,
-        after=_dump(forward),
+        after=after,
+    )
+    publish_event(
+        session,
+        event_type=f"{source_type_value}.linked",
+        actor=actor,
+        entity_type=AuditEntityType.LINKAGE.value,
+        entity_id=forward.id,
+        entity_version=None,
+        payload=after,
     )
     return forward
 
@@ -361,5 +379,14 @@ def delete_linkage(
         action=AuditAction.SOFT_DELETED,
         before=before,
         after=after,
+    )
+    publish_event(
+        session,
+        event_type=f"{linkage.source_type}.unlinked",
+        actor=actor,
+        entity_type=AuditEntityType.LINKAGE.value,
+        entity_id=linkage.id,
+        entity_version=None,
+        payload=after,
     )
     return None
