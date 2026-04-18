@@ -1,7 +1,7 @@
 """
 Shared fixtures for the Kanberoo TUI test suite.
 
-Two pieces of infrastructure live here:
+Three pieces of infrastructure live here:
 
 * :class:`MockApi` is an :class:`httpx.MockTransport`-backed fake so
   screens can fetch from the REST surface without a running server.
@@ -12,10 +12,16 @@ Two pieces of infrastructure live here:
   (pings are tested separately in the subscriber tests); the app's
   ws task pulls from the stream exactly the same way it pulls from
   the real :class:`~kanberoo_tui.ws.EventSubscriber`.
+* :class:`FakeEditor` replaces the ``$EDITOR`` subprocess inside
+  :mod:`kanberoo_tui.editor`. The test writes whatever it wants into
+  the temp file the helper created; the default is "write a fixed
+  string," but tests that need to simulate an unchanged buffer or a
+  user abort set ``behavior`` accordingly.
 
 Together they let every UI test drive a fully configured app through
-``run_test`` without the network, without a server, and without
-monkey-patching module-level state.
+``run_test`` without the network, without a server, without
+monkey-patching module-level state, and without launching a real
+editor subprocess.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ import asyncio
 import json as _json
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -233,3 +240,43 @@ def ws_factory(fake_ws):
         return fake_ws.iterator()
 
     return _factory
+
+
+class FakeEditor:
+    """
+    Programmable editor substitute for TUI tests.
+
+    Tests set ``content_to_write`` to the text the fake should drop
+    into the temp file (simulating a user who typed that content).
+    Leaving it ``None`` leaves the file's initial content untouched,
+    which the editor helper interprets as "user aborted without
+    changes."
+
+    Instances are awaitable: ``await fake_editor(app, path)`` writes
+    the configured content to ``path``. Production code never sees
+    this type; tests pass it as the ``editor_runner=`` argument to
+    :class:`KanberooTuiApp` (or a screen constructed by hand).
+    """
+
+    def __init__(self, content_to_write: str | None = None) -> None:
+        """
+        Build a fake with the given prepared content.
+        """
+        self.content_to_write = content_to_write
+        self.invocations: list[tuple[Any, Path]] = []
+
+    async def __call__(self, app: Any, path: Path) -> None:
+        """
+        Record the invocation and optionally overwrite ``path``.
+        """
+        self.invocations.append((app, path))
+        if self.content_to_write is not None:
+            path.write_text(self.content_to_write, encoding="utf-8")
+
+
+@pytest.fixture
+def fake_editor() -> FakeEditor:
+    """
+    Fresh :class:`FakeEditor` per test, defaulting to "no changes".
+    """
+    return FakeEditor()

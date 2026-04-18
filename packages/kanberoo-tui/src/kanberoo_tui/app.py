@@ -35,8 +35,18 @@ from kanberoo_tui.config import (
     TuiConfig,
     load_config,
 )
-from kanberoo_tui.messages import WorkspaceSelected, WsEventReceived
+from kanberoo_tui.editor import EditorRunner
+from kanberoo_tui.messages import (
+    OpenAuditFeed,
+    OpenSearch,
+    StorySelected,
+    WorkspaceSelected,
+    WsEventReceived,
+)
+from kanberoo_tui.screens.audit_feed import AuditFeedScreen
 from kanberoo_tui.screens.board import BoardScreen
+from kanberoo_tui.screens.search import SearchScreen
+from kanberoo_tui.screens.story_detail import StoryDetailScreen
 from kanberoo_tui.screens.workspace_list import WorkspaceListScreen
 from kanberoo_tui.ws import EventSubscriber, build_events_url
 
@@ -83,17 +93,33 @@ class KanberooTuiApp(App[None]):
         config: TuiConfig,
         client_factory: ClientFactory | None = None,
         ws_factory: WsFactory | None = None,
+        editor_runner: EditorRunner | None = None,
     ) -> None:
         """
         Build the app bound to ``config``.
+
+        ``editor_runner`` is forwarded to every screen that launches
+        ``$EDITOR`` (board ``n``, story detail ``e``/``c``). Tests pass
+        a callable that rewrites the temp file directly so no real
+        editor subprocess is launched; production callers leave it
+        ``None`` and each screen falls back to the default runner.
         """
         super().__init__()
         self._config = config
         self._client_factory = client_factory or default_client_factory
         self._ws_factory = ws_factory or default_ws_factory
+        self._editor_runner = editor_runner
         self._client: AsyncApiClient | None = None
         self._ws_task: asyncio.Task[None] | None = None
         self._ws_listeners: list[Any] = []
+
+    @property
+    def editor_runner(self) -> EditorRunner | None:
+        """
+        Return the editor runner configured at construction time, if
+        any. Screens read this when their own runner is ``None``.
+        """
+        return self._editor_runner
 
     @property
     def client(self) -> AsyncApiClient:
@@ -186,7 +212,31 @@ class KanberooTuiApp(App[None]):
         """
         Push the board screen for the workspace in ``message``.
         """
-        await self.push_screen(BoardScreen(message.workspace))
+        await self.push_screen(
+            BoardScreen(message.workspace, editor_runner=self._editor_runner)
+        )
+
+    async def on_story_selected(self, message: StorySelected) -> None:
+        """
+        Push the story detail screen for the story in ``message``.
+        """
+        await self.push_screen(
+            StoryDetailScreen(message.story, editor_runner=self._editor_runner)
+        )
+
+    async def on_open_search(self, message: OpenSearch) -> None:
+        """
+        Push the global fuzzy-search overlay.
+        """
+        del message
+        await self.push_screen(SearchScreen())
+
+    async def on_open_audit_feed(self, message: OpenAuditFeed) -> None:
+        """
+        Push the global audit feed screen.
+        """
+        del message
+        await self.push_screen(AuditFeedScreen())
 
 
 def main() -> None:
