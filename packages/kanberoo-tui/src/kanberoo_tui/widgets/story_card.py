@@ -16,15 +16,22 @@ not fan out extra requests to the tags endpoint.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from textual.widgets import Static
 
 PRIORITY_STYLES: dict[str, str] = {
     "none": "dim",
-    "low": "bold blue",
+    "low": "bold #7faa3a",
     "medium": "bold yellow",
     "high": "bold red",
+}
+
+ACTOR_EMOJI: dict[str, str] = {
+    "human": "\U0001f464",
+    "claude": "\U0001f916",
+    "system": "\u2699\ufe0f",
 }
 
 ACTOR_LABELS: dict[str, str] = {
@@ -38,6 +45,39 @@ ACTOR_STYLES: dict[str, str] = {
     "claude": "bold magenta",
     "system": "dim",
 }
+
+
+def _terminal_supports_emoji() -> bool:
+    """
+    Return ``True`` when the current ``$TERM`` is expected to render
+    multi-byte glyphs.
+
+    Crude but workable: ``linux`` (the kernel VT) and ``dumb`` both
+    fall back to ASCII; every other ``$TERM`` value is assumed to
+    render emoji. An unset ``$TERM`` is treated as capable so
+    :func:`run_test` and other headless harnesses render glyphs rather
+    than fallbacks.
+    """
+    term = os.environ.get("TERM", "")
+    if not term:
+        return True
+    lowered = term.lower()
+    if lowered == "dumb":
+        return False
+    return "linux" not in lowered
+
+
+def actor_badge(actor_type: str) -> str:
+    """
+    Return the display glyph for ``actor_type``.
+
+    Prefers the emoji set when the terminal is expected to render it,
+    falls back to the single-character labels otherwise. Unknown actor
+    types yield ``"?"`` so no empty string ever lands in a card.
+    """
+    if _terminal_supports_emoji():
+        return ACTOR_EMOJI.get(actor_type, ACTOR_LABELS.get(actor_type, "?"))
+    return ACTOR_LABELS.get(actor_type, "?")
 
 
 def _truncate(text: str, *, max_length: int) -> str:
@@ -127,9 +167,9 @@ class StoryCard(Static):
         parts.append(f"  [{priority_style}]\\[{priority}][/{priority_style}]")
         actor_type = self._story.get("state_actor_type")
         if actor_type:
-            label = ACTOR_LABELS.get(str(actor_type), "?")
+            badge = actor_badge(str(actor_type))
             actor_style = ACTOR_STYLES.get(str(actor_type), "bold")
-            parts.append(f"  [{actor_style}]\\[{label}][/{actor_style}]")
+            parts.append(f"  [{actor_style}]{badge}[/{actor_style}]")
         title = _truncate(str(self._story.get("title", "")), max_length=80)
         # Escape any accidental markup characters in user text.
         safe_title = title.replace("[", "\\[")

@@ -26,6 +26,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any, ClassVar
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding, BindingType
 from textual.widgets import Static
 
 from kanberoo_tui.client import AsyncApiClient
@@ -87,6 +88,12 @@ class KanberooTuiApp(App[None]):
 
     TITLE = "Kanberoo"
     SUB_TITLE = "board"
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("W", "goto_workspaces", "Workspaces", priority=True),
+        Binding("E", "goto_epics", "Epics", priority=True),
+        Binding("A", "goto_audit", "Audit", priority=True),
+    ]
 
     CSS: ClassVar[str] = """
     """
@@ -253,6 +260,74 @@ class KanberooTuiApp(App[None]):
         Push the epic detail screen for the selected epic.
         """
         await self.push_screen(EpicDetailScreen(message.workspace, message.epic))
+
+    async def _reset_to_workspace_list(self) -> None:
+        """
+        Pop every screen above the workspace list.
+
+        Textual's screen stack has the implicit default screen at
+        index 0 and :class:`WorkspaceListScreen` pushed on top from
+        :meth:`on_mount` at index 1, so the reset is a loop of
+        :meth:`pop_screen` until only those two remain.
+        """
+        while len(self.screen_stack) > 2:
+            await self.pop_screen()
+
+    async def _effective_workspace(self) -> dict[str, Any] | None:
+        """
+        Return the workspace implied by the current screen stack.
+
+        Walks the stack deepest-first looking for a screen that exposes
+        a ``current_workspace`` dict; falls back to a REST fetch for a
+        screen that only knows a ``current_workspace_id`` (story
+        detail). Returns ``None`` when nothing in the stack carries
+        workspace context.
+        """
+        for screen in reversed(list(self.screen_stack)):
+            ws = getattr(screen, "current_workspace", None)
+            if ws:
+                return dict(ws)
+        for screen in reversed(list(self.screen_stack)):
+            ws_id = getattr(screen, "current_workspace_id", None)
+            if ws_id and self._client is not None:
+                try:
+                    response = await self._client.get(f"/workspaces/{ws_id}")
+                except Exception:  # noqa: BLE001
+                    return None
+                return dict(response.json())
+        return None
+
+    async def action_goto_workspaces(self) -> None:
+        """
+        Pop back to the workspace list regardless of stack depth.
+        """
+        await self._reset_to_workspace_list()
+
+    async def action_goto_epics(self) -> None:
+        """
+        Open the epic list for the effective workspace.
+
+        On the workspace list itself, defer to the screen's own
+        ``open_epic_list`` action so the highlighted row still wins
+        (today's behavior). Otherwise reset the stack and push
+        :class:`EpicListScreen` for the workspace in context.
+        """
+        top = self.screen
+        if isinstance(top, WorkspaceListScreen):
+            top.action_open_epic_list()
+            return
+        workspace = await self._effective_workspace()
+        if workspace is None:
+            return
+        await self._reset_to_workspace_list()
+        await self.push_screen(EpicListScreen(workspace))
+
+    async def action_goto_audit(self) -> None:
+        """
+        Pop to the workspace list, then push the global audit feed.
+        """
+        await self._reset_to_workspace_list()
+        await self.push_screen(AuditFeedScreen())
 
 
 def main() -> None:

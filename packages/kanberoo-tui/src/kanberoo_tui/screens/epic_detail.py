@@ -106,6 +106,14 @@ class EpicDetailScreen(Screen[None]):
         return self._workspace
 
     @property
+    def current_workspace(self) -> dict[str, Any]:
+        """
+        Return the workspace this epic belongs to for the app's global
+        ``E`` binding to find.
+        """
+        return self._workspace
+
+    @property
     def epic(self) -> dict[str, Any]:
         """
         Return the epic body (for tests).
@@ -145,8 +153,13 @@ class EpicDetailScreen(Screen[None]):
         Register as the WS listener and load the scoped story list.
         """
         human_id = str(self._epic.get("human_id", ""))
-        title = str(self._epic.get("title", ""))
-        self.sub_title = f"{human_id} {title}"
+        key = str(self._workspace.get("key", ""))
+        if key and human_id:
+            self.sub_title = f"{key} - Epic {human_id}"
+        elif human_id:
+            self.sub_title = f"Epic {human_id}"
+        else:
+            self.sub_title = "Epic"
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
         await self.refresh_data()
 
@@ -246,24 +259,44 @@ class EpicDetailScreen(Screen[None]):
         self._active_row = max(0, min(self._active_row, len(cards) - 1))
         return cards[self._active_row]
 
+    def _next_non_empty_column(self, start: int, step: int) -> int | None:
+        """
+        Return the next column index whose cards list is non-empty.
+
+        Mirrors the board screen's helper; walks from ``start``
+        (exclusive) by ``step`` and returns the first column with at
+        least one card, or ``None`` when none exists inside the bounds.
+        """
+        index = start + step
+        while 0 <= index < len(COLUMN_STATES):
+            if self._column_at(index).cards:
+                return index
+            index += step
+        return None
+
     def action_focus_next_column(self) -> None:
         """
-        Focus the next column's card at the same row (clamped).
+        Focus the next non-empty column's card at the same row.
+
+        Empty columns are skipped so the mini-board matches the main
+        board's navigation feel.
         """
-        if self._active_col + 1 >= len(COLUMN_STATES):
+        target = self._next_non_empty_column(self._active_col, 1)
+        if target is None:
             return
-        self._active_col += 1
+        self._active_col = target
         card = self._focused_card()
         if card is not None:
             card.focus()
 
     def action_focus_prev_column(self) -> None:
         """
-        Focus the previous column's card at the same row (clamped).
+        Focus the previous non-empty column's card at the same row.
         """
-        if self._active_col - 1 < 0:
+        target = self._next_non_empty_column(self._active_col, -1)
+        if target is None:
             return
-        self._active_col -= 1
+        self._active_col = target
         card = self._focused_card()
         if card is not None:
             card.focus()

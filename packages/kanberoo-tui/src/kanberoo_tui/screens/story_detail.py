@@ -58,6 +58,7 @@ from kanberoo_tui.client import ApiError, ApiRequestError
 from kanberoo_tui.editor import EditorRunner, edit_markdown
 from kanberoo_tui.widgets.help_modal import KeybindingHelp
 from kanberoo_tui.widgets.link_picker import LinkPicker
+from kanberoo_tui.widgets.story_card import actor_badge
 from kanberoo_tui.widgets.tag_picker import TagPicker
 
 MOVE_KEY_TO_STATE: dict[str, str] = {
@@ -68,12 +69,23 @@ MOVE_KEY_TO_STATE: dict[str, str] = {
     "d": "done",
 }
 
+TAB_IDS: list[str] = [
+    "tab-description",
+    "tab-comments",
+    "tab-linkages",
+    "tab-tags",
+    "tab-audit",
+]
+
 HELP_ROWS: list[tuple[str, str]] = [
     ("e", "edit description in $EDITOR"),
     ("c", "add comment in $EDITOR"),
     ("m then b/t/p/r/d", "move the story to a new state"),
     ("t", "toggle tags"),
     ("L", "link to another story"),
+    ("1-5", "jump to tab by index"),
+    ("[ / ]", "previous / next tab"),
+    ("tab / shift+tab", "previous / next tab"),
     ("r", "refresh"),
     ("esc / q", "back"),
     ("?", "this overlay"),
@@ -89,7 +101,7 @@ STATE_BADGE_STYLES: dict[str, str] = {
 
 PRIORITY_STYLES: dict[str, str] = {
     "none": "dim",
-    "low": "bold blue",
+    "low": "bold #7faa3a",
     "medium": "bold yellow",
     "high": "bold red",
 }
@@ -124,6 +136,15 @@ class StoryDetailScreen(Screen[None]):
         Binding("t", "toggle_tags", "Tags"),
         Binding("L", "open_link_picker", "Link"),
         Binding("r", "refresh_story", "Refresh"),
+        Binding("1", "tab_index(0)", "Desc", show=False, priority=True),
+        Binding("2", "tab_index(1)", "Comments", show=False, priority=True),
+        Binding("3", "tab_index(2)", "Links", show=False, priority=True),
+        Binding("4", "tab_index(3)", "Tags", show=False, priority=True),
+        Binding("5", "tab_index(4)", "Audit", show=False, priority=True),
+        Binding("]", "tab_next", "Next tab", show=False, priority=True),
+        Binding("[", "tab_prev", "Prev tab", show=False, priority=True),
+        Binding("tab", "tab_next", "Next tab", show=False, priority=True),
+        Binding("shift+tab", "tab_prev", "Prev tab", show=False, priority=True),
         Binding("?", "show_help", "Help", show=False),
         Binding("q", "back", "Back"),
         Binding("escape", "back", "Back", show=False),
@@ -191,6 +212,21 @@ class StoryDetailScreen(Screen[None]):
         return dict(self._story)
 
     @property
+    def current_workspace_id(self) -> str | None:
+        """
+        Return the id of the workspace owning this story, if known.
+
+        The story detail screen only carries the story body, not the
+        workspace dict. The app's global ``E`` binding calls this to
+        look up the workspace via REST when the stack otherwise has no
+        workspace context.
+        """
+        ws_id = self._story.get("workspace_id")
+        if not ws_id:
+            return None
+        return str(ws_id)
+
+    @property
     def move_mode(self) -> bool:
         """
         Return whether move mode is currently armed. Exposed for tests.
@@ -225,7 +261,12 @@ class StoryDetailScreen(Screen[None]):
         """
         Register for WS events and populate every tab body.
         """
-        self.sub_title = str(self._story.get("human_id", ""))
+        human_id = str(self._story.get("human_id", ""))
+        key = human_id.split("-", 1)[0] if "-" in human_id else ""
+        if key and human_id:
+            self.sub_title = f"{key} - {human_id}"
+        else:
+            self.sub_title = human_id or "Story"
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
         await self.refresh_data()
 
@@ -338,8 +379,8 @@ class StoryDetailScreen(Screen[None]):
         actor_bit = ""
         if actor_type:
             actor_style = ACTOR_STYLES.get(str(actor_type), "bold")
-            actor_label = _escape_markup(str(actor_type))
-            actor_bit = f"  [{actor_style}]\\[{actor_label}][/{actor_style}]"
+            badge = _escape_markup(actor_badge(str(actor_type)))
+            actor_bit = f"  [{actor_style}]{badge}[/{actor_style}]"
         header_markup = (
             f"[bold]{human_id}[/bold]  {title}\n"
             f"[{state_style}]\\[{state}][/{state_style}]  "
@@ -476,11 +517,11 @@ class StoryDetailScreen(Screen[None]):
             return
         for event in self._audit:
             when = _escape_markup(str(event.get("occurred_at", "")))
-            actor = _escape_markup(
-                f"{event.get('actor_type', '?')}:{event.get('actor_id', '?')}"
-            )
+            actor_type = str(event.get("actor_type", "?"))
+            badge = _escape_markup(actor_badge(actor_type))
+            actor_id = _escape_markup(str(event.get("actor_id", "?")))
             action = _escape_markup(str(event.get("action", "")))
-            await body.mount(Static(f"{when}  [{actor}]  {action}"))
+            await body.mount(Static(f"{when}  {badge} {actor_id}  {action}"))
 
     async def action_show_help(self) -> None:
         """
@@ -489,6 +530,40 @@ class StoryDetailScreen(Screen[None]):
         await self.app.push_screen(
             KeybindingHelp(title="Story detail", bindings=HELP_ROWS)
         )
+
+    def action_tab_index(self, index: int) -> None:
+        """
+        Activate the tab at ``index`` (0-based).
+
+        Out-of-range indices are silently ignored so a keypress never
+        raises when the tab list changes.
+        """
+        if index < 0 or index >= len(TAB_IDS):
+            return
+        tabs = self.query_one("#story-tabs", TabbedContent)
+        tabs.active = TAB_IDS[index]
+
+    def action_tab_next(self) -> None:
+        """
+        Activate the tab after the currently active one, wrapping.
+        """
+        tabs = self.query_one("#story-tabs", TabbedContent)
+        try:
+            current = TAB_IDS.index(tabs.active)
+        except ValueError:
+            current = 0
+        tabs.active = TAB_IDS[(current + 1) % len(TAB_IDS)]
+
+    def action_tab_prev(self) -> None:
+        """
+        Activate the tab before the currently active one, wrapping.
+        """
+        tabs = self.query_one("#story-tabs", TabbedContent)
+        try:
+            current = TAB_IDS.index(tabs.active)
+        except ValueError:
+            current = 0
+        tabs.active = TAB_IDS[(current - 1) % len(TAB_IDS)]
 
     def action_back(self) -> None:
         """
@@ -691,10 +766,11 @@ def _format_comment(comment: dict[str, Any], *, is_reply: bool = False) -> str:
     actor_type = str(comment.get("actor_type", "?"))
     actor_id = str(comment.get("actor_id", "?"))
     style = ACTOR_STYLES.get(actor_type, "bold")
+    badge = _escape_markup(actor_badge(actor_type))
     when = _escape_markup(str(comment.get("created_at", "")))
     body = _escape_markup(str(comment.get("body", "")))
     prefix = "\u21aa " if is_reply else ""
     return (
-        f"{prefix}[{style}]{_escape_markup(actor_type)}:{_escape_markup(actor_id)}"
+        f"{prefix}[{style}]{badge} {_escape_markup(actor_id)}"
         f"[/{style}]  [dim]{when}[/dim]\n{body}"
     )

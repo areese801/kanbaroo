@@ -89,6 +89,14 @@ class EpicListScreen(Screen[None]):
         return self._workspace
 
     @property
+    def current_workspace(self) -> dict[str, Any]:
+        """
+        Return the workspace in context for the app's global ``E``
+        binding to find.
+        """
+        return self._workspace
+
+    @property
     def epics(self) -> list[dict[str, Any]]:
         """
         Return the current epics list (for tests).
@@ -107,7 +115,8 @@ class EpicListScreen(Screen[None]):
         """
         Register the WS listener, build the table, kick off the fetch.
         """
-        self.sub_title = f"{self._workspace.get('key', '')} epics"
+        key = str(self._workspace.get("key", ""))
+        self.sub_title = f"{key} - Epics" if key else "Epics"
         body = self.query_one("#epic-list-body", Vertical)
         table: DataTable[str] = DataTable(
             id="epic-table", cursor_type="row", zebra_stripes=True

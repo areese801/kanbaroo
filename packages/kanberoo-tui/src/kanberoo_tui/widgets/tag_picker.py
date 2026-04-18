@@ -51,6 +51,8 @@ class TagPicker(ModalScreen[set[str] | None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", priority=True),
         Binding("enter", "confirm", "Confirm", priority=True),
+        Binding("j", "cursor_down", "Down", show=False, priority=True),
+        Binding("k", "cursor_up", "Up", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -125,13 +127,33 @@ class TagPicker(ModalScreen[set[str] | None]):
         """
         if self._tags:
             picker = self.query_one("#tag-picker-list", SelectionList)
-            picker.focus()
+            self.set_focus(picker)
 
     def action_cancel(self) -> None:
         """
         Dismiss with ``None``; no REST calls are made.
         """
         self.dismiss(None)
+
+    def action_cursor_down(self) -> None:
+        """
+        Move the selection cursor down. Routes the Vim-style ``j`` key
+        through whichever arrow-key action the underlying list exposes.
+        """
+        if not self._tags:
+            return
+        picker = self.query_one("#tag-picker-list", SelectionList)
+        picker.action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        """
+        Move the selection cursor up. Routes the Vim-style ``k`` key
+        through whichever arrow-key action the underlying list exposes.
+        """
+        if not self._tags:
+            return
+        picker = self.query_one("#tag-picker-list", SelectionList)
+        picker.action_cursor_up()
 
     async def action_confirm(self) -> None:
         """

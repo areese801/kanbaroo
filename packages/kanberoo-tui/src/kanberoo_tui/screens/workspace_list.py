@@ -16,17 +16,26 @@ The screen registers itself as the current WS listener with the app
 on mount and deregisters on unmount. Any ``workspace.*`` event
 triggers a full refetch; optimistic single-row updates are deferred
 to keep the first cut simple.
+
+Quit handling
+-------------
+
+``q`` pushes the :class:`QuitConfirmModal` so a stray keypress never
+exits the app; a second ``q`` within :data:`FAST_QUIT_WINDOW_SECONDS`
+skips the modal and quits directly so power users who know what they
+mean can still double-tap out.
 """
 
 from __future__ import annotations
 
 import contextlib
+import time
 from typing import Any, ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
-from textual.screen import Screen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
 from kanberoo_tui.client import ApiError
@@ -40,6 +49,8 @@ from kanberoo_tui.widgets.help_modal import KeybindingHelp
 
 WORKSPACE_EVENT_PREFIX = "workspace."
 
+FAST_QUIT_WINDOW_SECONDS = 0.5
+
 HELP_ROWS: list[tuple[str, str]] = [
     ("j / k", "move cursor"),
     ("enter / l / right", "open workspace board"),
@@ -47,9 +58,70 @@ HELP_ROWS: list[tuple[str, str]] = [
     ("/", "fuzzy search"),
     ("a", "global audit feed"),
     ("r", "refresh list"),
-    ("q", "quit"),
+    ("q", "quit (confirm; double-tap for fast exit)"),
     ("?", "this overlay"),
 ]
+
+
+class QuitConfirmModal(ModalScreen[bool]):
+    """
+    Small confirmation modal for ``q`` on the workspace list.
+
+    Dismisses with ``True`` to quit and ``False`` to return to the
+    caller. Dedicated modal (rather than a stock prompt) keeps the
+    dialog tiny and keyboard-first: ``y``/``enter`` accept, ``n``/
+    ``escape`` dismiss, anything else is ignored so a stray keypress
+    in the confirm path never quits the app.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("y", "confirm", "Yes", priority=True),
+        Binding("enter", "confirm", "Yes", priority=True),
+        Binding("n", "cancel", "No", priority=True),
+        Binding("escape", "cancel", "No", priority=True),
+        Binding("q", "cancel", "No", priority=True),
+    ]
+
+    DEFAULT_CSS = """
+    QuitConfirmModal {
+        align: center middle;
+    }
+    QuitConfirmModal > Vertical {
+        width: 30;
+        height: auto;
+        border: round $accent;
+        background: $panel;
+        padding: 1 2;
+    }
+    QuitConfirmModal .confirm-title {
+        text-style: bold;
+        color: $accent;
+    }
+    QuitConfirmModal .confirm-hint {
+        color: $text-muted;
+        padding-top: 1;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        """
+        Lay out the centered confirm box.
+        """
+        with Vertical():
+            yield Static("Quit Kanberoo?", classes="confirm-title")
+            yield Static("[y]es / [n]o", classes="confirm-hint")
+
+    def action_confirm(self) -> None:
+        """
+        Dismiss with ``True`` so the caller quits.
+        """
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        """
+        Dismiss with ``False`` so the caller stays on the list.
+        """
+        self.dismiss(False)
 
 
 class WorkspaceListScreen(Screen[None]):
@@ -72,7 +144,7 @@ class WorkspaceListScreen(Screen[None]):
         Binding("E", "open_epic_list", "Epics", show=False),
         Binding("r", "refresh_list", "Refresh"),
         Binding("?", "show_help", "Help", show=False),
-        Binding("q", "app.quit", "Quit", priority=True),
+        Binding("q", "quit_with_confirm", "Quit", priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -95,6 +167,7 @@ class WorkspaceListScreen(Screen[None]):
         super().__init__()
         self._workspaces: list[dict[str, Any]] = []
         self._counts: dict[str, tuple[str, str]] = {}
+        self._last_q_at: float = 0.0
 
     def compose(self) -> ComposeResult:
         """
@@ -110,6 +183,7 @@ class WorkspaceListScreen(Screen[None]):
         Register as the current WS listener, build the table, and kick
         off the initial fetch.
         """
+        self.sub_title = "Workspaces"
         body = self.query_one("#ws-body", Vertical)
         table: DataTable[str] = DataTable(
             id="ws-table", cursor_type="row", zebra_stripes=True
@@ -303,6 +377,28 @@ class WorkspaceListScreen(Screen[None]):
         await self.app.push_screen(
             KeybindingHelp(title="Workspaces", bindings=HELP_ROWS)
         )
+
+    async def action_quit_with_confirm(self) -> None:
+        """
+        Ask before quitting, with a rapid-double-tap fast-exit.
+
+        A single ``q`` pushes :class:`QuitConfirmModal`. A second ``q``
+        within :data:`FAST_QUIT_WINDOW_SECONDS` of the first skips the
+        modal and quits immediately so power users can double-tap to
+        exit without reading a prompt.
+        """
+        now = time.monotonic()
+        if now - self._last_q_at <= FAST_QUIT_WINDOW_SECONDS:
+            self._last_q_at = 0.0
+            self.app.exit()
+            return
+        self._last_q_at = now
+
+        def _on_dismiss(result: bool | None) -> None:
+            if result:
+                self.app.exit()
+
+        await self.app.push_screen(QuitConfirmModal(), _on_dismiss)
 
     def action_open_selected(self) -> None:
         """

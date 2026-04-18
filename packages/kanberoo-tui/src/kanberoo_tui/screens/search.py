@@ -175,6 +175,7 @@ class SearchScreen(Screen[None]):
         """
         Build the table, subscribe to WS events, populate the index.
         """
+        self.sub_title = "Search"
         body = self.query_one("#search-body", Vertical)
         table: DataTable[str] = DataTable(
             id="search-table", cursor_type="row", zebra_stripes=True

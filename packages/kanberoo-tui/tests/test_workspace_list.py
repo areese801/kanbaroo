@@ -104,9 +104,10 @@ async def test_q_quits_even_with_table_focused(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):
     """
-    Pressing ``q`` on the workspace list quits the app even when the
-    DataTable has captured focus (the default). Regression guard for
-    the priority-binding fix.
+    Pressing ``q`` on the workspace list opens the confirm modal even
+    when the DataTable has captured focus (the default); confirming
+    quits. Regression guard for the priority-binding fix plus the new
+    quit-confirm flow.
     """
     mock_api.json(
         "GET",
@@ -126,6 +127,12 @@ async def test_q_quits_even_with_table_focused(
         table = app.screen.query_one("#ws-table", DataTable)
         assert app.focused is table
         await pilot.press("q")
+        await pilot.pause()
+        # Confirm modal should be on top of the stack.
+        from kanberoo_tui.screens.workspace_list import QuitConfirmModal
+
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("y")
         await pilot.pause()
         assert app._exit is True
         await fake_ws.close()

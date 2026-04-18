@@ -53,6 +53,8 @@ class LinkPicker(ModalScreen[dict[str, Any] | None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", priority=True),
         Binding("ctrl+s", "submit", "Submit"),
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -123,6 +125,26 @@ class LinkPicker(ModalScreen[dict[str, Any] | None]):
         Dismiss without making a REST call.
         """
         self.dismiss(None)
+
+    def action_cursor_down(self) -> None:
+        """
+        Move the link-type option list cursor down.
+
+        Non-priority so the typing path in the target Input is not
+        shadowed; fires only when focus is on the OptionList (or
+        another non-Input widget within the modal).
+        """
+        option_list = self.query_one("#link-type", OptionList)
+        option_list.action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        """
+        Move the link-type option list cursor up.
+
+        Non-priority for the same reason as :meth:`action_cursor_down`.
+        """
+        option_list = self.query_one("#link-type", OptionList)
+        option_list.action_cursor_up()
 
     async def action_submit(self) -> None:
         """
