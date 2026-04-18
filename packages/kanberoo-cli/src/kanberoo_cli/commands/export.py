@@ -27,14 +27,17 @@ from kanberoo_cli.rendering import (
     stderr_console,
     stdout_console,
 )
-from kanberoo_cli.resolvers import resolve_workspace
+from kanberoo_cli.resolvers import require_effective_workspace, resolve_workspace
 
 
 def export_command(
-    workspace: str = typer.Option(
-        ...,
+    workspace: str | None = typer.Option(
+        None,
         "--workspace",
-        help="Workspace key or UUID.",
+        help=(
+            "Workspace key or UUID. Falls back to $KANBEROO_WORKSPACE "
+            "and default_workspace from config."
+        ),
     ),
     output: Path = typer.Option(
         ...,
@@ -46,10 +49,11 @@ def export_command(
     Download a workspace export archive into ``output``.
     """
     config = require_config()
+    workspace_ref = require_effective_workspace(workspace, config)
     output.mkdir(parents=True, exist_ok=True)
     with build_client(config) as client:
         try:
-            ws = resolve_workspace(client, workspace)
+            ws = resolve_workspace(client, workspace_ref)
         except ApiError as exc:
             exit_on_api_error(exc)
 

@@ -19,7 +19,7 @@ hidden from the default list and read paths.
 import base64
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from kanberoo_core.actor import Actor
@@ -188,8 +188,13 @@ def get_epic_by_human_id(
 
     Used by the ``GET /epics/by-key/{human_id}`` endpoint. Soft-
     deleted rows are hidden unless ``include_deleted`` is ``True``.
+
+    The match is case-insensitive so callers can pass ``KAN-7``,
+    ``kan-7``, or ``Kan-7`` interchangeably; human ids are
+    conventionally uppercase but the service layer is forgiving so
+    every client (CLI, TUI, MCP) benefits.
     """
-    stmt = select(Epic).where(Epic.human_id == human_id)
+    stmt = select(Epic).where(func.upper(Epic.human_id) == human_id.upper())
     epic = session.execute(stmt).scalar_one_or_none()
     if epic is None:
         raise NotFoundError("epic", human_id)

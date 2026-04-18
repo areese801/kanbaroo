@@ -58,7 +58,7 @@ def test_epic_list(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     ``kb epic list`` renders a table of epics.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body())
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.json(
         "GET",
         "/workspaces/ws-kan/epics",
@@ -74,7 +74,7 @@ def test_epic_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> None
     ``kb epic create`` POSTs the title and renders the created epic.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body())
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.json(
         "POST",
         "/workspaces/ws-kan/epics",

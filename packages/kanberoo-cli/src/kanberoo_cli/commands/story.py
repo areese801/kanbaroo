@@ -30,7 +30,12 @@ from kanberoo_cli.rendering import (
     print_table,
     stdout_console,
 )
-from kanberoo_cli.resolvers import resolve_epic, resolve_story, resolve_workspace
+from kanberoo_cli.resolvers import (
+    require_effective_workspace,
+    resolve_epic,
+    resolve_story,
+    resolve_workspace,
+)
 
 app = typer.Typer(
     name="story",
@@ -68,10 +73,13 @@ def _resolve_epic_id(client: ApiClient, epic_ref: str | None) -> str | None:
 
 @app.command("list")
 def list_stories(
-    workspace: str = typer.Option(
-        ...,
+    workspace: str | None = typer.Option(
+        None,
         "--workspace",
-        help="Workspace key or UUID.",
+        help=(
+            "Workspace key or UUID. Falls back to $KANBEROO_WORKSPACE "
+            "and default_workspace from config."
+        ),
     ),
     state: str | None = typer.Option(
         None,
@@ -109,10 +117,11 @@ def list_stories(
     List stories in a workspace with optional filters.
     """
     config = require_config()
+    workspace_ref = require_effective_workspace(workspace, config)
     items: list[dict[str, Any]] = []
     with build_client(config) as client:
         try:
-            ws = resolve_workspace(client, workspace)
+            ws = resolve_workspace(client, workspace_ref)
             epic_id = _resolve_epic_id(client, epic)
             cursor: str | None = None
             while True:
@@ -155,7 +164,14 @@ def list_stories(
 
 @app.command("create")
 def create_story(
-    workspace: str = typer.Option(..., "--workspace", help="Workspace key or UUID."),
+    workspace: str | None = typer.Option(
+        None,
+        "--workspace",
+        help=(
+            "Workspace key or UUID. Falls back to $KANBEROO_WORKSPACE "
+            "and default_workspace from config."
+        ),
+    ),
     title: str = typer.Option(..., "--title", help="Story title."),
     description: str | None = typer.Option(
         None,
@@ -178,9 +194,10 @@ def create_story(
     Create a new story.
     """
     config = require_config()
+    workspace_ref = require_effective_workspace(workspace, config)
     with build_client(config) as client:
         try:
-            ws = resolve_workspace(client, workspace)
+            ws = resolve_workspace(client, workspace_ref)
             payload: dict[str, Any] = {
                 "title": title,
                 "priority": priority,

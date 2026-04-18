@@ -652,3 +652,25 @@ def test_get_story_by_unknown_human_id_raises(session: Session) -> None:
     """
     with pytest.raises(NotFoundError):
         story_service.get_story_by_human_id(session, human_id="NOPE-1")
+
+
+def test_get_story_by_human_id_is_case_insensitive(session: Session) -> None:
+    """
+    ``get_story_by_human_id`` matches ``KAN-3``, ``kan-3``, ``Kan-3``
+    interchangeably so the REST layer is forgiving regardless of the
+    client's casing habits.
+    """
+    workspace_id = _make_workspace(session)
+    story = story_service.create_story(
+        session,
+        actor=HUMAN,
+        workspace_id=workspace_id,
+        payload=StoryCreate(title="first"),
+    )
+    session.commit()
+    # Sanity: the stored human id is uppercase by convention.
+    assert story.human_id == story.human_id.upper()
+
+    for variant in (story.human_id, story.human_id.lower(), story.human_id.title()):
+        fetched = story_service.get_story_by_human_id(session, human_id=variant)
+        assert fetched.id == story.id

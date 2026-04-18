@@ -441,3 +441,24 @@ def test_get_epic_with_invalid_cursor_raises_validation(session: Session) -> Non
             workspace_id=workspace_id,
             cursor="!!!not-base64!!!",
         )
+
+
+def test_get_epic_by_human_id_is_case_insensitive(session: Session) -> None:
+    """
+    ``get_epic_by_human_id`` matches ``KAN-7``, ``kan-7``, ``Kan-7``
+    interchangeably so the REST layer is forgiving regardless of the
+    client's casing habits.
+    """
+    workspace_id = _make_workspace(session)
+    epic = epic_service.create_epic(
+        session,
+        actor=HUMAN,
+        workspace_id=workspace_id,
+        payload=EpicCreate(title="an epic"),
+    )
+    session.commit()
+    assert epic.human_id == epic.human_id.upper()
+
+    for variant in (epic.human_id, epic.human_id.lower(), epic.human_id.title()):
+        fetched = epic_service.get_epic_by_human_id(session, human_id=variant)
+        assert fetched.id == epic.id

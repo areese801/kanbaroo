@@ -41,7 +41,7 @@ def test_export_writes_archive_to_output(
     ``<output>/<key>-<timestamp>.tar.gz``.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body())
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.bytes(
         "GET",
         "/workspaces/ws-kan/export",
@@ -66,7 +66,7 @@ def test_export_404_prints_clear_message(
     "not available yet" message on stderr, not a traceback.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body())
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.error(
         "GET",
         "/workspaces/ws-kan/export",

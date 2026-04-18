@@ -133,7 +133,7 @@ class KanberooTuiApp(App[None]):
         raise a clear error rather than silently returning ``None``.
         """
         if self._client is None:
-            raise RuntimeError("AsyncApiClient not initialised yet")
+            raise RuntimeError("AsyncApiClient not initialized yet")
         return self._client
 
     def compose(self) -> ComposeResult:

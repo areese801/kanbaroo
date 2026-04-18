@@ -21,7 +21,7 @@ exactly one audit row within the caller's transaction.
 import base64
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from kanberoo_core.actor import Actor
@@ -292,8 +292,13 @@ def get_story_by_human_id(
 
     Used by the ``GET /stories/by-key/{human_id}`` endpoint. Soft-
     deleted rows are hidden unless ``include_deleted`` is ``True``.
+
+    The match is case-insensitive so callers can pass ``KAN-3``,
+    ``kan-3``, or ``Kan-3`` interchangeably; human ids are
+    conventionally uppercase but the service layer is forgiving so
+    every client (CLI, TUI, MCP) benefits.
     """
-    stmt = select(Story).where(Story.human_id == human_id)
+    stmt = select(Story).where(func.upper(Story.human_id) == human_id.upper())
     story = session.execute(stmt).scalar_one_or_none()
     if story is None:
         raise NotFoundError("story", human_id)

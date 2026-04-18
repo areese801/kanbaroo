@@ -20,6 +20,7 @@ import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 class ConfigError(Exception):
@@ -56,12 +57,18 @@ class CliConfig:
     ``database_url`` is needed by ``kb backup`` to locate the raw
     SQLite file for a local snapshot; every other command only needs
     ``api_url`` and ``token``.
+
+    ``default_workspace`` is the optional workspace key most
+    mutating/listing commands fall back to when neither ``--workspace``
+    nor ``$KANBEROO_WORKSPACE`` is set. It is written by
+    ``kb workspace use`` and may be absent in older configs.
     """
 
     api_url: str
     token: str
     database_url: str
     config_path: Path
+    default_workspace: str | None = None
 
 
 def default_config_dir() -> Path:
@@ -107,6 +114,7 @@ def load_config(path: Path | None = None) -> CliConfig:
     api_url = os.environ.get("KANBEROO_API_URL") or raw.get("api_url")
     token = os.environ.get("KANBEROO_TOKEN") or raw.get("token")
     database_url = os.environ.get("KANBEROO_DATABASE_URL") or raw.get("database_url")
+    default_workspace_raw = raw.get("default_workspace")
 
     missing: list[str] = []
     if not isinstance(api_url, str) or not api_url:
@@ -119,13 +127,66 @@ def load_config(path: Path | None = None) -> CliConfig:
         raise ConfigMalformedError(
             f"config.toml at {resolved_path} is missing: {', '.join(missing)}"
         )
+    if default_workspace_raw is not None and (
+        not isinstance(default_workspace_raw, str) or not default_workspace_raw
+    ):
+        raise ConfigMalformedError(
+            f"config.toml at {resolved_path} has an invalid default_workspace"
+        )
 
     assert isinstance(api_url, str)
     assert isinstance(token, str)
     assert isinstance(database_url, str)
+    default_workspace: str | None = (
+        default_workspace_raw if isinstance(default_workspace_raw, str) else None
+    )
     return CliConfig(
         api_url=api_url,
         token=token,
         database_url=database_url,
         config_path=resolved_path,
+        default_workspace=default_workspace,
     )
+
+
+def _escape_toml(value: str) -> str:
+    """
+    Escape a string value for a TOML basic string literal.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _render_config_toml(values: dict[str, Any]) -> str:
+    """
+    Render a minimal ``config.toml`` from a mapping of string scalars.
+
+    ``None`` values are omitted. Key order is preserved so rewrites do
+    not reshuffle the file unnecessarily.
+    """
+    lines: list[str] = []
+    for key, value in values.items():
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise TypeError(f"config value for {key!r} must be str, got {type(value)}")
+        lines.append(f'{key} = "{_escape_toml(value)}"')
+    return "\n".join(lines) + "\n"
+
+
+def write_default_workspace(path: Path, workspace_key: str | None) -> None:
+    """
+    Rewrite ``config.toml`` at ``path`` to set ``default_workspace`` to
+    ``workspace_key`` (or remove it when ``None``).
+
+    Preserves every other key present in the file. Used by
+    ``kb workspace use``.
+    """
+    if not path.exists():
+        raise ConfigNotFoundError(path)
+    with path.open("rb") as fh:
+        raw = tomllib.load(fh)
+    if workspace_key is None:
+        raw.pop("default_workspace", None)
+    else:
+        raw["default_workspace"] = workspace_key
+    path.write_text(_render_config_toml(raw), encoding="utf-8")

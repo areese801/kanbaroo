@@ -53,11 +53,11 @@ class EpicListScreen(Screen[None]):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("j", "cursor_down", "Down", show=False),
-        Binding("k", "cursor_up", "Up", show=False),
+        Binding("j", "cursor_down", "Down", show=False, priority=True),
+        Binding("k", "cursor_up", "Up", show=False, priority=True),
         Binding("enter", "open_selected", "Open", priority=True),
         Binding("r", "refresh_list", "Refresh"),
-        Binding("q", "back", "Back"),
+        Binding("q", "back", "Back", priority=True),
         Binding("escape", "back", "Back", show=False),
         Binding("?", "show_help", "Help", show=False),
     ]

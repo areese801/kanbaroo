@@ -62,8 +62,8 @@ class WorkspaceListScreen(Screen[None]):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("j", "cursor_down", "Down", show=False),
-        Binding("k", "cursor_up", "Up", show=False),
+        Binding("j", "cursor_down", "Down", show=False, priority=True),
+        Binding("k", "cursor_up", "Up", show=False, priority=True),
         Binding("l", "open_selected", "Open", show=False),
         Binding("right", "open_selected", "Open", show=False),
         Binding("enter", "open_selected", "Open", priority=True),
@@ -72,7 +72,7 @@ class WorkspaceListScreen(Screen[None]):
         Binding("E", "open_epic_list", "Epics", show=False),
         Binding("r", "refresh_list", "Refresh"),
         Binding("?", "show_help", "Help", show=False),
-        Binding("q", "quit", "Quit"),
+        Binding("q", "app.quit", "Quit", priority=True),
     ]
 
     DEFAULT_CSS = """
