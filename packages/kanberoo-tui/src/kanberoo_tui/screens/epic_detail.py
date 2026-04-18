@@ -60,19 +60,19 @@ class EpicDetailScreen(Screen[None]):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("h", "focus_prev_column", "Prev col", show=False),
-        Binding("left", "focus_prev_column", "Prev col", show=False),
-        Binding("l", "focus_next_column", "Next col", show=False),
-        Binding("right", "focus_next_column", "Next col", show=False),
-        Binding("j", "focus_next_card", "Next card", show=False),
-        Binding("down", "focus_next_card", "Next card", show=False),
-        Binding("k", "focus_prev_card", "Prev card", show=False),
-        Binding("up", "focus_prev_card", "Prev card", show=False),
+        Binding("h", "focus_prev_column", "Prev col", show=False, priority=True),
+        Binding("left", "focus_prev_column", "Prev col", show=False, priority=True),
+        Binding("l", "focus_next_column", "Next col", show=False, priority=True),
+        Binding("right", "focus_next_column", "Next col", show=False, priority=True),
+        Binding("j", "focus_next_card", "Next card", show=False, priority=True),
+        Binding("down", "focus_next_card", "Next card", show=False, priority=True),
+        Binding("k", "focus_prev_card", "Prev card", show=False, priority=True),
+        Binding("up", "focus_prev_card", "Prev card", show=False, priority=True),
         Binding("m", "enter_move_mode", "Move"),
         Binding("enter", "open_detail", "Detail", priority=True),
         Binding("r", "refresh_screen", "Refresh"),
         Binding("?", "show_help", "Help", show=False),
-        Binding("q", "back", "Back"),
+        Binding("q", "back", "Back", priority=True),
         Binding("escape", "cancel_or_back", "Cancel/Back", show=False, priority=True),
     ]
 

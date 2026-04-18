@@ -20,7 +20,7 @@ from kanberoo_cli.rendering import (
     print_table,
     stdout_console,
 )
-from kanberoo_cli.resolvers import resolve_workspace
+from kanberoo_cli.resolvers import require_effective_workspace, resolve_workspace
 
 app = typer.Typer(
     name="tag",
@@ -31,10 +31,13 @@ app = typer.Typer(
 
 @app.command("list")
 def list_tags(
-    workspace: str = typer.Option(
-        ...,
+    workspace: str | None = typer.Option(
+        None,
         "--workspace",
-        help="Workspace key or UUID.",
+        help=(
+            "Workspace key or UUID. Falls back to $KANBEROO_WORKSPACE "
+            "and default_workspace from config."
+        ),
     ),
     include_deleted: bool = typer.Option(
         False,
@@ -47,9 +50,10 @@ def list_tags(
     List every tag in a workspace.
     """
     config = require_config()
+    workspace_ref = require_effective_workspace(workspace, config)
     with build_client(config) as client:
         try:
-            ws = resolve_workspace(client, workspace)
+            ws = resolve_workspace(client, workspace_ref)
             params: dict[str, Any] = {}
             if include_deleted:
                 params["include_deleted"] = True
@@ -83,10 +87,13 @@ def list_tags(
 @app.command("create")
 def create_tag(
     name: str = typer.Argument(..., help="Tag name."),
-    workspace: str = typer.Option(
-        ...,
+    workspace: str | None = typer.Option(
+        None,
         "--workspace",
-        help="Workspace key or UUID.",
+        help=(
+            "Workspace key or UUID. Falls back to $KANBEROO_WORKSPACE "
+            "and default_workspace from config."
+        ),
     ),
     color: str | None = typer.Option(
         None,
@@ -99,12 +106,13 @@ def create_tag(
     Create a workspace-scoped tag.
     """
     config = require_config()
+    workspace_ref = require_effective_workspace(workspace, config)
     payload: dict[str, Any] = {"name": name}
     if color is not None:
         payload["color"] = color
     with build_client(config) as client:
         try:
-            ws = resolve_workspace(client, workspace)
+            ws = resolve_workspace(client, workspace_ref)
             response = client.post(
                 f"/workspaces/{ws['id']}/tags",
                 json=payload,

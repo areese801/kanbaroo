@@ -613,9 +613,23 @@ kb backup --output ~/.kanberoo/backups/              # Timestamped raw SQLite fi
 # Tokens
 kb token list
 kb token create --name "mcp" --actor-type claude --actor-id outer-claude
+
+# Default workspace (flag optional on the commands above)
+kb workspace use KAN                      # Persist `default_workspace = "KAN"` into config.toml
+kb workspace current                      # Show the effective default and its source
 ```
 
 All list commands support `--json` for scripting and default to Rich-rendered tables.
+
+#### Default workspace
+
+Every command whose example above passes `--workspace KEY` also accepts the flag as optional. The effective workspace is resolved in this order, highest precedence first:
+
+1. `--workspace` flag.
+2. `$KANBEROO_WORKSPACE` environment variable.
+3. `default_workspace` field in `$KANBEROO_CONFIG_DIR/config.toml` (written by `kb workspace use`).
+
+If none of the three supplies a value the command exits 1 with a hint pointing at all three paths. `kb workspace use <key>` validates the key against the live server before rewriting `config.toml`; `kb workspace current` reports the effective value and which source supplied it (`flag` / `env` / `config` / `unset`). Commands that take a positional workspace argument (`kb workspace show <key>`) are untouched and still require the argument.
 
 ---
 

@@ -51,7 +51,7 @@ def test_tag_list(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     ``kb tag list`` renders every tag in the workspace.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body())
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.json(
         "GET",
         "/workspaces/ws-kan/tags",
@@ -67,7 +67,7 @@ def test_tag_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     ``kb tag create`` POSTs the name and optional color.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body())
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.json(
         "POST",
         "/workspaces/ws-kan/tags",

@@ -372,6 +372,28 @@ def test_by_key_404_for_unknown_human_id(client: TestClient, human_auth: Any) ->
     assert response.json()["error"]["code"] == "not_found"
 
 
+def test_by_key_case_insensitive(client: TestClient, human_auth: Any) -> None:
+    """
+    GET by-key accepts any casing of the ``KAN-N`` handle; a story
+    created as ``KAN-1`` can be fetched by ``kan-1`` or ``Kan-1``.
+    """
+    ws = _create_workspace(client, human_auth)
+    story = _create_story(client, human_auth, ws["id"], title="s")
+    assert story["human_id"] == story["human_id"].upper()
+
+    for variant in (
+        story["human_id"],
+        story["human_id"].lower(),
+        story["human_id"].title(),
+    ):
+        response = client.get(
+            f"/api/v1/stories/by-key/{variant}",
+            headers=human_auth.headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["id"] == story["id"]
+
+
 def _create_tag(
     client: TestClient,
     human_auth: Any,

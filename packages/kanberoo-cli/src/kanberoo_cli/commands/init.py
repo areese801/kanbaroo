@@ -154,7 +154,7 @@ def init(
     console.print(
         Panel.fit(
             warning + body,
-            title="Kanberoo initialised",
+            title="Kanberoo initialized",
             border_style="green",
         )
     )

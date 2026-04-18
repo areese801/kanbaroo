@@ -288,6 +288,24 @@ def test_audit_actor_attribution_varies(session: Session) -> None:
     assert [e.actor_id for e in events] == ["outer-claude", "migration"]
 
 
+def test_get_workspace_by_key_is_case_insensitive(session: Session) -> None:
+    """
+    ``get_workspace_by_key`` matches ``KAN``, ``kan``, ``Kan``
+    interchangeably so the REST layer is forgiving regardless of the
+    client's casing habits.
+    """
+    workspace = ws_service.create_workspace(
+        session,
+        actor=HUMAN,
+        payload=WorkspaceCreate(key="KAN", name="Kanberoo"),
+    )
+    session.commit()
+
+    for variant in ("KAN", "kan", "Kan"):
+        fetched = ws_service.get_workspace_by_key(session, key=variant)
+        assert fetched.id == workspace.id
+
+
 def test_unique_constraint_smoke(session: Session) -> None:
     """
     Sanity-check that the create path inserts a real row (not just an

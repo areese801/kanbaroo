@@ -19,6 +19,7 @@ from kanberoo_tui.app import KanberooTuiApp
 from kanberoo_tui.screens.board import COLUMN_STATES, BoardScreen
 from kanberoo_tui.screens.workspace_list import WorkspaceListScreen
 from kanberoo_tui.widgets.board_column import BoardColumn
+from kanberoo_tui.widgets.story_card import StoryCard
 
 
 def _workspace_list_body(items):
@@ -249,4 +250,115 @@ async def test_ws_story_created_triggers_refetch(
         backlog = board.query_one("#col-backlog", BoardColumn)
         human_ids = [c.story["human_id"] for c in backlog.cards]
         assert human_ids == ["KAN-1", "KAN-2"]
+        await fake_ws.close()
+
+
+async def test_board_nav_bindings_priority_over_focused_card(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    With a descendant story card focused, pressing h/l/j/k still
+    advances the board's cursor. Regression guard for the missing
+    ``priority=True`` flag on the navigation bindings.
+    """
+    stories = [
+        _story("story-1", "KAN-1", state="backlog"),
+        _story("story-2", "KAN-2", state="backlog"),
+        _story("story-3", "KAN-3", state="todo"),
+    ]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+    app = await _open_board(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        board = app.screen
+        assert isinstance(board, BoardScreen)
+
+        # A card is the focused widget after the initial load.
+        assert isinstance(app.focused, StoryCard)
+        assert board._active_col == 0
+        assert board._active_row == 0
+
+        # `l` advances column even with the story card holding focus.
+        await pilot.press("l")
+        await pilot.pause()
+        assert board._active_col == 1
+
+        # `h` moves back.
+        await pilot.press("h")
+        await pilot.pause()
+        assert board._active_col == 0
+
+        # `j` / `k` advance / retreat within a column.
+        await pilot.press("j")
+        await pilot.pause()
+        assert board._active_row == 1
+        await pilot.press("k")
+        await pilot.pause()
+        assert board._active_row == 0
+
+        await fake_ws.close()
+
+
+async def test_board_m_still_works_on_focused_card(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Non-priority bindings (``m`` for move mode) still fire when a card
+    has focus. Sanity check that we did not blanket-prioritise
+    everything.
+    """
+    stories = [_story("story-1", "KAN-1", state="backlog")]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+    app = await _open_board(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        board = app.screen
+        assert isinstance(board, BoardScreen)
+        assert isinstance(app.focused, StoryCard)
+        assert board.move_mode is False
+        await pilot.press("m")
+        await pilot.pause()
+        assert board.move_mode is True
+        await fake_ws.close()
+
+
+async def test_board_q_pops_with_focused_card(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``q`` while a story card has focus pops back to the
+    workspace list. Regression guard for ``q`` being swallowed by the
+    focused descendant.
+    """
+    stories = [_story("story-1", "KAN-1", state="backlog")]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+    app = await _open_board(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, BoardScreen)
+        assert isinstance(app.focused, StoryCard)
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, WorkspaceListScreen)
         await fake_ws.close()

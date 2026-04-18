@@ -100,6 +100,69 @@ async def test_enter_pushes_board(
         await fake_ws.close()
 
 
+async def test_q_quits_even_with_table_focused(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``q`` on the workspace list quits the app even when the
+    DataTable has captured focus (the default). Regression guard for
+    the priority-binding fix.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace("ws-1", "KAN", "Kanberoo")]),
+    )
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        table = app.screen.query_one("#ws-table", DataTable)
+        assert app.focused is table
+        await pilot.press("q")
+        await pilot.pause()
+        assert app._exit is True
+        await fake_ws.close()
+
+
+async def test_refresh_still_fires_on_workspace_list(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Sanity check that the non-priority ``r`` binding still fires on
+    the workspace list; we didn't blanket-prioritise everything.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace("ws-1", "KAN", "Kanberoo")]),
+    )
+    mock_api.json("GET", "/workspaces", body=_workspace_list_body([]))
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial = sum(1 for r in mock_api.requests if r.path == "/workspaces")
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+        after = sum(1 for r in mock_api.requests if r.path == "/workspaces")
+        assert after == initial + 1
+        await fake_ws.close()
+
+
 async def test_workspace_event_triggers_refetch(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):

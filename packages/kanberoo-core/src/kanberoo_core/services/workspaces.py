@@ -16,7 +16,7 @@ hard-delete and only toggles ``deleted_at``.
 import base64
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from kanberoo_core.actor import Actor
@@ -194,8 +194,13 @@ def get_workspace_by_key(
     callers with a human-meaningful handle (``KAN``) can resolve to a
     full workspace without a list scan. Soft-deleted rows are hidden
     unless ``include_deleted`` is ``True``.
+
+    The match is case-insensitive so callers can pass ``KAN``, ``kan``,
+    or ``Kan`` interchangeably; workspace keys are conventionally
+    uppercase but the service layer is forgiving so every client (CLI,
+    TUI, MCP) benefits.
     """
-    stmt = select(Workspace).where(Workspace.key == key)
+    stmt = select(Workspace).where(func.upper(Workspace.key) == key.upper())
     workspace = session.execute(stmt).scalar_one_or_none()
     if workspace is None:
         raise NotFoundError("workspace", key)

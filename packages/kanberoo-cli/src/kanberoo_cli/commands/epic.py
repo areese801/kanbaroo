@@ -14,7 +14,11 @@ import typer
 from kanberoo_cli.client import ApiError
 from kanberoo_cli.context import build_client, require_config
 from kanberoo_cli.rendering import exit_on_api_error, print_json, print_table
-from kanberoo_cli.resolvers import resolve_epic, resolve_workspace
+from kanberoo_cli.resolvers import (
+    require_effective_workspace,
+    resolve_epic,
+    resolve_workspace,
+)
 
 app = typer.Typer(
     name="epic",
@@ -40,10 +44,13 @@ def _epic_rows(items: list[dict[str, object]]) -> list[list[str]]:
 
 @app.command("list")
 def list_epics(
-    workspace: str = typer.Option(
-        ...,
+    workspace: str | None = typer.Option(
+        None,
         "--workspace",
-        help="Workspace key or UUID.",
+        help=(
+            "Workspace key or UUID. Falls back to $KANBEROO_WORKSPACE "
+            "and default_workspace from config."
+        ),
     ),
     include_deleted: bool = typer.Option(
         False,
@@ -60,10 +67,11 @@ def list_epics(
     List every epic in a workspace.
     """
     config = require_config()
+    workspace_ref = require_effective_workspace(workspace, config)
     items: list[dict[str, object]] = []
     with build_client(config) as client:
         try:
-            ws = resolve_workspace(client, workspace)
+            ws = resolve_workspace(client, workspace_ref)
             cursor: str | None = None
             while True:
                 params: dict[str, object] = {"limit": 200}
@@ -95,10 +103,13 @@ def list_epics(
 
 @app.command("create")
 def create_epic(
-    workspace: str = typer.Option(
-        ...,
+    workspace: str | None = typer.Option(
+        None,
         "--workspace",
-        help="Workspace key or UUID.",
+        help=(
+            "Workspace key or UUID. Falls back to $KANBEROO_WORKSPACE "
+            "and default_workspace from config."
+        ),
     ),
     title: str = typer.Option(..., "--title", help="Epic title."),
     description: str | None = typer.Option(
@@ -116,12 +127,13 @@ def create_epic(
     Create a new epic in ``workspace``.
     """
     config = require_config()
+    workspace_ref = require_effective_workspace(workspace, config)
     payload: dict[str, object] = {"title": title}
     if description is not None:
         payload["description"] = description
     with build_client(config) as client:
         try:
-            ws = resolve_workspace(client, workspace)
+            ws = resolve_workspace(client, workspace_ref)
             response = client.post(
                 f"/workspaces/{ws['id']}/epics",
                 json=payload,

@@ -78,7 +78,7 @@ def test_story_list_renders_table(
     Listing stories in a workspace renders their human ids.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body("KAN"))
     mock_api.json(
         "GET",
         "/workspaces/ws-kan/stories",
@@ -96,7 +96,7 @@ def test_story_create_posts_payload(
     ``create`` resolves the workspace then POSTs the payload.
     """
     del config_dir
-    mock_api.json("GET", "/workspaces/KAN", body=_ws_body("KAN"))
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body("KAN"))
     mock_api.json(
         "POST",
         "/workspaces/ws-kan/stories",

@@ -12,9 +12,20 @@ from __future__ import annotations
 import typer
 
 from kanberoo_cli.client import ApiError, ApiRequestError
+from kanberoo_cli.config import write_default_workspace
 from kanberoo_cli.context import build_client, require_config
-from kanberoo_cli.rendering import exit_on_api_error, print_json, print_table
-from kanberoo_cli.resolvers import resolve_workspace
+from kanberoo_cli.rendering import (
+    exit_on_api_error,
+    print_json,
+    print_table,
+    stdout_console,
+)
+from kanberoo_cli.resolvers import (
+    WORKSPACE_ENV_VAR,
+    WorkspaceSource,
+    effective_workspace,
+    resolve_workspace,
+)
 
 app = typer.Typer(
     name="workspace",
@@ -164,3 +175,54 @@ def show_workspace(
         ],
         title=f"workspace {body['key']}",
     )
+
+
+@app.command("use")
+def use_workspace(
+    key: str = typer.Argument(..., help="Workspace key to set as the default."),
+) -> None:
+    """
+    Set the CLI's default workspace.
+
+    Validates the key against the live server, then writes
+    ``default_workspace`` into ``config.toml`` so subsequent commands
+    may omit ``--workspace``. The ``--workspace`` flag and
+    ``$KANBEROO_WORKSPACE`` still take precedence when set.
+    """
+    config = require_config()
+    with build_client(config) as client:
+        try:
+            body = resolve_workspace(client, key)
+        except ApiRequestError as exc:
+            exit_on_api_error(exc)
+        except ApiError as exc:
+            exit_on_api_error(exc)
+
+    stored_key = str(body["key"])
+    write_default_workspace(config.config_path, stored_key)
+    stdout_console.print(
+        f"Default workspace set to [bold]{stored_key}[/bold]. "
+        "Commands will now default to this workspace unless "
+        f"[bold]--workspace[/bold] or [bold]${WORKSPACE_ENV_VAR}[/bold] is set."
+    )
+
+
+@app.command("current")
+def current_workspace() -> None:
+    """
+    Show the effective default workspace and the source supplying it.
+
+    Applies the same resolution order as every command that accepts
+    ``--workspace`` (env > config). Reports ``unset`` when no source
+    supplies a value.
+    """
+    config = require_config()
+    value, source = effective_workspace(None, config)
+    if source == WorkspaceSource.UNSET:
+        stdout_console.print(
+            "[yellow]No default workspace configured.[/yellow] "
+            f"Set [bold]${WORKSPACE_ENV_VAR}[/bold] or run "
+            "[bold]kb workspace use KEY[/bold]."
+        )
+        return
+    stdout_console.print(f"[bold]{value}[/bold] (source: [cyan]{source}[/cyan])")
