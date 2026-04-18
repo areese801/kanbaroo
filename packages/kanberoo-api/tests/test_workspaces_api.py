@@ -253,6 +253,98 @@ def test_every_mutation_writes_one_audit_row(
         assert row.actor_id == "adam"
 
 
+def test_get_workspace_by_key_roundtrip_and_404(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    ``GET /workspaces/by-key/{key}`` returns the full body + ETag for
+    a known key, 404s for an unknown one, and round-trips to the same
+    row returned by the id-based read.
+    """
+    created = _create_workspace(client, human_auth, key="KAN")
+
+    response = client.get(
+        "/api/v1/workspaces/by-key/KAN",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == created["id"]
+    assert body["key"] == "KAN"
+    assert response.headers["etag"] == "1"
+
+    missing = client.get(
+        "/api/v1/workspaces/by-key/NOPE",
+        headers=human_auth.headers,
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "not_found"
+
+
+def test_get_workspace_by_key_hides_soft_deleted(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    Soft-deleted workspaces 404 on ``by-key`` by default and become
+    visible with ``?include_deleted=true``.
+    """
+    created = _create_workspace(client, human_auth, key="KAN")
+    client.delete(
+        f"/api/v1/workspaces/{created['id']}",
+        headers={**human_auth.headers, "If-Match": "1"},
+    )
+
+    missing = client.get(
+        "/api/v1/workspaces/by-key/KAN",
+        headers=human_auth.headers,
+    )
+    assert missing.status_code == 404
+
+    visible = client.get(
+        "/api/v1/workspaces/by-key/KAN?include_deleted=true",
+        headers=human_auth.headers,
+    )
+    assert visible.status_code == 200
+    assert visible.json()["id"] == created["id"]
+
+
+def test_export_endpoint_streams_archive(client: TestClient, human_auth: Any) -> None:
+    """
+    ``GET /workspaces/{id}/export`` streams a ``application/gzip``
+    archive with a download-friendly filename header.
+    """
+    import io
+    import tarfile
+
+    created = _create_workspace(client, human_auth, key="KAN")
+    response = client.get(
+        f"/api/v1/workspaces/{created['id']}/export",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/gzip")
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert "KAN-export-" in disposition
+
+    archive = response.content
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+        names = {m.name for m in tf.getmembers()}
+    assert "schema_version.json" in names
+    assert "kanberoo.db" in names
+    assert "tables/workspaces.parquet" in names
+
+
+def test_export_endpoint_requires_auth(client: TestClient, human_auth: Any) -> None:
+    """
+    Unauthenticated export requests are rejected at 401.
+    """
+    created = _create_workspace(client, human_auth, key="KAN")
+    response = client.get(f"/api/v1/workspaces/{created['id']}/export")
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
 def test_include_deleted_list_filter(client: TestClient, human_auth: Any) -> None:
     """
     The list endpoint hides soft-deleted rows by default and shows them

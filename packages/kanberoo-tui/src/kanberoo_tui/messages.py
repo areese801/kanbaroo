@@ -59,6 +59,41 @@ class StorySelected(Message):
         self.story = story
 
 
+class OpenEpicList(Message):
+    """
+    A screen asked to open the epic list for a workspace.
+
+    Emitted by the workspace list when the user presses ``E``. Carries
+    the workspace body so the target screen has every field without
+    refetching.
+    """
+
+    def __init__(self, workspace: dict[str, Any]) -> None:
+        """
+        Build the message carrying the target workspace.
+        """
+        super().__init__()
+        self.workspace = workspace
+
+
+class EpicSelected(Message):
+    """
+    An epic was picked from the epic list.
+
+    The app pushes :class:`EpicDetailScreen`. ``workspace`` is carried
+    alongside the epic so the detail screen can scope its story fetch
+    without a follow-up round-trip.
+    """
+
+    def __init__(self, workspace: dict[str, Any], epic: dict[str, Any]) -> None:
+        """
+        Build the message carrying the workspace and selected epic.
+        """
+        super().__init__()
+        self.workspace = workspace
+        self.epic = epic
+
+
 class OpenSearch(Message):
     """
     A screen asked to open the global fuzzy-search overlay.

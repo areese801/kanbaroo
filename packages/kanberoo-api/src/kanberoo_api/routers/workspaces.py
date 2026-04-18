@@ -83,6 +83,31 @@ def create_workspace(
     return WorkspaceRead.model_validate(workspace)
 
 
+@router.get("/by-key/{key}", response_model=WorkspaceRead)
+def get_workspace_by_key(
+    key: str,
+    response: Response,
+    include_deleted: bool = Query(False),
+    session: Session = Depends(get_session),
+    _actor: Actor = Depends(resolve_actor),
+) -> WorkspaceRead:
+    """
+    Return a workspace by its short ``key`` (``KAN``, ``ENG``, ...).
+
+    Mirrors ``GET /stories/by-key`` and ``GET /epics/by-key``: clients
+    that know only the human handle can resolve to a full workspace
+    without paginating the list surface. Soft-deleted rows 404 unless
+    ``include_deleted`` is set.
+    """
+    workspace = ws_service.get_workspace_by_key(
+        session,
+        key=key,
+        include_deleted=include_deleted,
+    )
+    response.headers["ETag"] = etag_for(workspace.version)
+    return WorkspaceRead.model_validate(workspace)
+
+
 @router.get("/{workspace_id}", response_model=WorkspaceRead)
 def get_workspace(
     workspace_id: str,

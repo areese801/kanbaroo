@@ -180,6 +180,30 @@ def get_workspace(
     return workspace
 
 
+def get_workspace_by_key(
+    session: Session,
+    *,
+    key: str,
+    include_deleted: bool = False,
+) -> Workspace:
+    """
+    Return a workspace by its short ``key`` or raise
+    :class:`NotFoundError`.
+
+    Mirrors :func:`kanberoo_core.services.stories.get_story_by_human_id`:
+    callers with a human-meaningful handle (``KAN``) can resolve to a
+    full workspace without a list scan. Soft-deleted rows are hidden
+    unless ``include_deleted`` is ``True``.
+    """
+    stmt = select(Workspace).where(Workspace.key == key)
+    workspace = session.execute(stmt).scalar_one_or_none()
+    if workspace is None:
+        raise NotFoundError("workspace", key)
+    if workspace.deleted_at is not None and not include_deleted:
+        raise NotFoundError("workspace", key)
+    return workspace
+
+
 def update_workspace(
     session: Session,
     *,

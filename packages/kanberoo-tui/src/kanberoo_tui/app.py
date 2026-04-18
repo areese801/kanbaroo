@@ -37,7 +37,9 @@ from kanberoo_tui.config import (
 )
 from kanberoo_tui.editor import EditorRunner
 from kanberoo_tui.messages import (
+    EpicSelected,
     OpenAuditFeed,
+    OpenEpicList,
     OpenSearch,
     StorySelected,
     WorkspaceSelected,
@@ -45,6 +47,8 @@ from kanberoo_tui.messages import (
 )
 from kanberoo_tui.screens.audit_feed import AuditFeedScreen
 from kanberoo_tui.screens.board import BoardScreen
+from kanberoo_tui.screens.epic_detail import EpicDetailScreen
+from kanberoo_tui.screens.epic_list import EpicListScreen
 from kanberoo_tui.screens.search import SearchScreen
 from kanberoo_tui.screens.story_detail import StoryDetailScreen
 from kanberoo_tui.screens.workspace_list import WorkspaceListScreen
@@ -237,6 +241,18 @@ class KanberooTuiApp(App[None]):
         """
         del message
         await self.push_screen(AuditFeedScreen())
+
+    async def on_open_epic_list(self, message: OpenEpicList) -> None:
+        """
+        Push the epic list screen for the workspace in ``message``.
+        """
+        await self.push_screen(EpicListScreen(message.workspace))
+
+    async def on_epic_selected(self, message: EpicSelected) -> None:
+        """
+        Push the epic detail screen for the selected epic.
+        """
+        await self.push_screen(EpicDetailScreen(message.workspace, message.epic))
 
 
 def main() -> None:
