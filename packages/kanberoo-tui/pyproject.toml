@@ -13,6 +13,9 @@ dependencies = [
     "websockets>=12.0",
 ]
 
+[project.scripts]
+kanberoo-tui = "kanberoo_tui.app:main"
+
 [tool.uv.sources]
 kanberoo-core = { workspace = true }
 

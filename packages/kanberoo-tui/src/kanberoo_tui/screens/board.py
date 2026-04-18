@@ -1,0 +1,402 @@
+"""
+Board view (milestone 12) for a single workspace.
+
+Five columns laid out horizontally map to the states defined in the
+spec section 4.3 state machine: ``backlog``, ``todo``, ``in_progress``,
+``in_review``, ``done``. Each column holds zero or more
+:class:`~kanberoo_tui.widgets.story_card.StoryCard` widgets.
+
+Keyboard navigation is explicit: the screen owns two integers
+(``_active_col``, ``_active_row``) and moves focus to the right card
+on ``h``/``l``/``j``/``k``. Move mode (``m``) captures the next key
+and translates ``b`` / ``t`` / ``p`` / ``r`` / ``d`` into a
+``POST /stories/{id}/transition`` with the card's current ETag as
+``If-Match``. On success the board refetches; the card shows up in
+its new column after the refresh.
+
+Cage H scope
+------------
+
+The story detail screen, search, and audit feed are reserved for
+cage I. The matching keybindings (``enter``, ``/``) flash a short
+placeholder message so the shape is obvious without doing the work.
+"""
+
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from textual import events
+from textual.app import ComposeResult
+from textual.binding import Binding, BindingType
+from textual.containers import Horizontal
+from textual.screen import Screen
+from textual.widgets import Footer, Header
+
+from kanberoo_tui.client import ApiError
+from kanberoo_tui.widgets.board_column import BoardColumn
+from kanberoo_tui.widgets.story_card import StoryCard
+
+COLUMN_STATES: list[tuple[str, str]] = [
+    ("backlog", "Backlog"),
+    ("todo", "Todo"),
+    ("in_progress", "In Progress"),
+    ("in_review", "In Review"),
+    ("done", "Done"),
+]
+
+MOVE_KEY_TO_STATE: dict[str, str] = {
+    "b": "backlog",
+    "t": "todo",
+    "p": "in_progress",
+    "r": "in_review",
+    "d": "done",
+}
+
+STORY_EVENT_PREFIX = "story."
+
+
+class BoardScreen(Screen[None]):
+    """
+    Kanban board for one workspace.
+
+    ``workspace`` is the REST body of the selected workspace; the
+    screen reads ``id``, ``key``, and ``name`` off it and does not
+    otherwise touch the workspace surface.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("h", "focus_prev_column", "Prev col", show=False),
+        Binding("left", "focus_prev_column", "Prev col", show=False),
+        Binding("l", "focus_next_column", "Next col", show=False),
+        Binding("right", "focus_next_column", "Next col", show=False),
+        Binding("j", "focus_next_card", "Next card", show=False),
+        Binding("down", "focus_next_card", "Next card", show=False),
+        Binding("k", "focus_prev_card", "Prev card", show=False),
+        Binding("up", "focus_prev_card", "Prev card", show=False),
+        Binding("m", "enter_move_mode", "Move"),
+        Binding("enter", "open_detail", "Detail"),
+        Binding("slash", "open_search", "Search", show=False),
+        Binding("r", "refresh_board", "Refresh"),
+        Binding("?", "app.show_help_panel", "Help", show=False),
+        Binding("q", "back", "Back"),
+        Binding("escape", "cancel_move_mode", "Cancel move", show=False, priority=True),
+    ]
+
+    DEFAULT_CSS = """
+    BoardScreen {
+        layout: vertical;
+    }
+    BoardScreen > Horizontal {
+        height: 1fr;
+    }
+    """
+
+    def __init__(self, workspace: dict[str, Any]) -> None:
+        """
+        Build an empty board for ``workspace``. Cards load in
+        :meth:`on_mount`.
+        """
+        super().__init__()
+        self._workspace = workspace
+        self._stories: list[dict[str, Any]] = []
+        self._tags_by_story: dict[str, list[dict[str, Any]]] = {}
+        self._move_mode: bool = False
+        self._active_col: int = 0
+        self._active_row: int = 0
+
+    def compose(self) -> ComposeResult:
+        """
+        Build the vertical chrome plus the five-column horizontal body.
+        """
+        yield Header()
+        with Horizontal(id="board-columns"):
+            for state_key, title in COLUMN_STATES:
+                yield BoardColumn(
+                    state_key=state_key,
+                    title=title,
+                    id=f"col-{state_key}",
+                )
+        yield Footer()
+
+    @property
+    def workspace(self) -> dict[str, Any]:
+        """
+        Return the workspace body so tests can assert the screen was
+        constructed correctly.
+        """
+        return self._workspace
+
+    @property
+    def stories(self) -> list[dict[str, Any]]:
+        """
+        Return the current stories list.
+        """
+        return list(self._stories)
+
+    @property
+    def move_mode(self) -> bool:
+        """
+        Return ``True`` when move-mode is active; exposed for tests.
+        """
+        return self._move_mode
+
+    async def on_mount(self) -> None:
+        """
+        Register as the WS listener and load the board data.
+        """
+        self.sub_title = str(self._workspace.get("name", ""))
+        self.app.register_ws_listener(self)  # type: ignore[attr-defined]
+        await self.refresh_data()
+
+    def on_unmount(self) -> None:
+        """
+        Deregister the WS listener so re-entering the screen from the
+        workspace list registers fresh.
+        """
+        self.app.unregister_ws_listener(self)  # type: ignore[attr-defined]
+
+    async def refresh_data(self) -> None:
+        """
+        Fetch all stories for the workspace and repopulate columns.
+
+        Walks the paginated story endpoint with ``limit=200`` so a
+        workspace with a few hundred stories renders in one round-trip
+        pair.
+        """
+        client = self.app.client  # type: ignore[attr-defined]
+        workspace_id = str(self._workspace.get("id", ""))
+        try:
+            stories = await self._fetch_stories(client, workspace_id)
+        except ApiError as exc:
+            self.notify(f"board fetch failed: {exc}", severity="error")
+            return
+        self._stories = stories
+        self._render_columns()
+        self._restore_focus()
+
+    async def _fetch_stories(
+        self,
+        client: Any,
+        workspace_id: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Walk ``GET /workspaces/{id}/stories`` until exhausted.
+        """
+        items: list[dict[str, Any]] = []
+        cursor: str | None = None
+        while True:
+            params: dict[str, Any] = {"limit": 200}
+            if cursor is not None:
+                params["cursor"] = cursor
+            response = await client.get(
+                f"/workspaces/{workspace_id}/stories",
+                params=params,
+            )
+            body = response.json()
+            items.extend(body.get("items", []))
+            cursor = body.get("next_cursor")
+            if cursor is None:
+                break
+        return items
+
+    def _render_columns(self) -> None:
+        """
+        Distribute stories into columns by state.
+        """
+        by_state: dict[str, list[dict[str, Any]]] = {
+            state: [] for state, _ in COLUMN_STATES
+        }
+        for story in self._stories:
+            state = str(story.get("state", ""))
+            if state in by_state:
+                by_state[state].append(story)
+        for state_key, _title in COLUMN_STATES:
+            column = self.query_one(f"#col-{state_key}", BoardColumn)
+            tags_lookup = self._tags_by_story
+            cards = [
+                StoryCard(
+                    story,
+                    tags=tags_lookup.get(str(story.get("id", ""))),
+                )
+                for story in by_state[state_key]
+            ]
+            column.set_cards(cards)
+
+    def _restore_focus(self) -> None:
+        """
+        Re-focus the card at the active column/row after a refresh.
+
+        If the previously-active card no longer exists, clamp to the
+        last card in the column. Completely empty columns are left
+        unfocused.
+        """
+        self._active_col = max(0, min(self._active_col, len(COLUMN_STATES) - 1))
+        column = self._column_at(self._active_col)
+        cards = column.cards
+        if not cards:
+            return
+        self._active_row = max(0, min(self._active_row, len(cards) - 1))
+        cards[self._active_row].focus()
+
+    def _column_at(self, index: int) -> BoardColumn:
+        """
+        Return the :class:`BoardColumn` at the given index.
+        """
+        state_key, _ = COLUMN_STATES[index]
+        return self.query_one(f"#col-{state_key}", BoardColumn)
+
+    def _focused_card(self) -> StoryCard | None:
+        """
+        Return the currently-focused card or ``None``.
+        """
+        column = self._column_at(self._active_col)
+        cards = column.cards
+        if not cards:
+            return None
+        self._active_row = max(0, min(self._active_row, len(cards) - 1))
+        return cards[self._active_row]
+
+    def action_focus_next_column(self) -> None:
+        """
+        Focus the next column's card at the same row (clamped).
+        """
+        if self._active_col + 1 >= len(COLUMN_STATES):
+            return
+        self._active_col += 1
+        card = self._focused_card()
+        if card is not None:
+            card.focus()
+
+    def action_focus_prev_column(self) -> None:
+        """
+        Focus the previous column's card at the same row (clamped).
+        """
+        if self._active_col - 1 < 0:
+            return
+        self._active_col -= 1
+        card = self._focused_card()
+        if card is not None:
+            card.focus()
+
+    def action_focus_next_card(self) -> None:
+        """
+        Focus the next card in the current column.
+        """
+        column = self._column_at(self._active_col)
+        cards = column.cards
+        if not cards:
+            return
+        self._active_row = min(self._active_row + 1, len(cards) - 1)
+        cards[self._active_row].focus()
+
+    def action_focus_prev_card(self) -> None:
+        """
+        Focus the previous card in the current column.
+        """
+        column = self._column_at(self._active_col)
+        cards = column.cards
+        if not cards:
+            return
+        self._active_row = max(self._active_row - 1, 0)
+        cards[self._active_row].focus()
+
+    def action_enter_move_mode(self) -> None:
+        """
+        Enter move mode so the next key picks a target state.
+        """
+        if self._focused_card() is None:
+            self.notify("no card to move")
+            return
+        self._move_mode = True
+        self.notify("move: b/t/p/r/d, esc to cancel")
+
+    def action_cancel_move_mode(self) -> None:
+        """
+        Leave move mode without transitioning.
+        """
+        if self._move_mode:
+            self._move_mode = False
+            self.notify("move cancelled")
+
+    async def action_refresh_board(self) -> None:
+        """
+        Keybinding for ``r``.
+        """
+        await self.refresh_data()
+        self.notify("board refreshed")
+
+    def action_open_detail(self) -> None:
+        """
+        Placeholder for the story-detail screen landed in cage I.
+        """
+        self.notify("story detail: cage I")
+
+    def action_open_search(self) -> None:
+        """
+        Placeholder for fuzzy search landed in cage I.
+        """
+        self.notify("search: cage I")
+
+    def action_back(self) -> None:
+        """
+        Pop back to the workspace list.
+        """
+        self.app.pop_screen()
+
+    async def on_key(self, event: events.Key) -> None:
+        """
+        Consume the next key when move mode is active.
+
+        Runs before the Binding system because
+        :meth:`Screen.on_key` is called first; returning without
+        calling ``event.stop`` lets Textual fall through to bindings
+        for normal keys.
+        """
+        if not self._move_mode:
+            return
+        if event.key == "escape":
+            return
+        event.stop()
+        target = MOVE_KEY_TO_STATE.get(event.key)
+        self._move_mode = False
+        if target is None:
+            self.notify(f"unknown move target: {event.key}")
+            return
+        await self._transition_focused(target)
+
+    async def _transition_focused(self, to_state: str) -> None:
+        """
+        POST the transition for the focused card.
+        """
+        card = self._focused_card()
+        if card is None:
+            self.notify("no card focused")
+            return
+        story = card.story
+        story_id = str(story.get("id", ""))
+        current_state = str(story.get("state", ""))
+        if current_state == to_state:
+            self.notify(f"already in {to_state}")
+            return
+        client = self.app.client  # type: ignore[attr-defined]
+        try:
+            await client.post_with_etag(
+                f"/stories/{story_id}",
+                f"/stories/{story_id}/transition",
+                json={"to_state": to_state},
+            )
+        except ApiError as exc:
+            self.notify(f"transition failed: {exc}", severity="error")
+            return
+        self.notify(f"moved {story.get('human_id')} -> {to_state}")
+        await self.refresh_data()
+
+    async def handle_ws_event(self, event: dict[str, Any]) -> None:
+        """
+        React to a WebSocket event. Any ``story.*`` event triggers a
+        refetch so the board stays in sync without manual refresh.
+        """
+        event_type = str(event.get("event_type", ""))
+        if event_type.startswith(STORY_EVENT_PREFIX):
+            await self.refresh_data()
