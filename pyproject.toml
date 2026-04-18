@@ -90,6 +90,7 @@ exclude = [
     "(^|/)dist/",
     "packages/kanberoo-cli/tests/",
     "packages/kanberoo-tui/tests/",
+    "packages/kanberoo-mcp/tests/",
 ]
 
 [tool.pytest.ini_options]

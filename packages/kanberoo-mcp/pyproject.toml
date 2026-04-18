@@ -10,7 +10,11 @@ dependencies = [
     "kanberoo-core",
     "mcp>=1.0",
     "httpx>=0.27",
+    "anyio>=4.0",
 ]
+
+[project.scripts]
+kanberoo-mcp = "kanberoo_mcp.server:main"
 
 [tool.uv.sources]
 kanberoo-core = { workspace = true }
