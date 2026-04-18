@@ -34,6 +34,7 @@ from kanberoo_core.models.tag import Tag
 from kanberoo_core.queries import live
 from kanberoo_core.schemas.story import StoryCreate, StoryRead, StoryUpdate
 from kanberoo_core.services.audit import emit_audit
+from kanberoo_core.services.events import publish_event
 from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
@@ -179,6 +180,7 @@ def create_story(
     session.add(story)
     session.flush()
 
+    after = _dump(story)
     emit_audit(
         session,
         actor=actor,
@@ -186,7 +188,16 @@ def create_story(
         entity_id=story.id,
         action=AuditAction.CREATED,
         before=None,
-        after=_dump(story),
+        after=after,
+    )
+    publish_event(
+        session,
+        event_type="story.created",
+        actor=actor,
+        entity_type=AuditEntityType.STORY.value,
+        entity_id=story.id,
+        entity_version=story.version,
+        payload=after,
     )
     return story
 
@@ -345,6 +356,15 @@ def update_story(
         before=before,
         after=after,
     )
+    publish_event(
+        session,
+        event_type="story.updated",
+        actor=actor,
+        entity_type=AuditEntityType.STORY.value,
+        entity_id=story.id,
+        entity_version=story.version,
+        payload=after,
+    )
     return story
 
 
@@ -380,6 +400,15 @@ def soft_delete_story(
         action=AuditAction.SOFT_DELETED,
         before=before,
         after=after,
+    )
+    publish_event(
+        session,
+        event_type="story.deleted",
+        actor=actor,
+        entity_type=AuditEntityType.STORY.value,
+        entity_id=story.id,
+        entity_version=story.version,
+        payload=after,
     )
     return story
 
@@ -439,5 +468,20 @@ def transition_story(
         action=AuditAction.STATE_CHANGED,
         before=before,
         after=after,
+    )
+    transition_payload: dict[str, Any] = {
+        "from_state": current_state.value,
+        "to_state": target_state.value,
+    }
+    if reason is not None:
+        transition_payload["reason"] = reason
+    publish_event(
+        session,
+        event_type="story.transitioned",
+        actor=actor,
+        entity_type=AuditEntityType.STORY.value,
+        entity_id=story.id,
+        entity_version=story.version,
+        payload=transition_payload,
     )
     return story

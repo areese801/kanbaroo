@@ -37,6 +37,7 @@ from kanberoo_core.models.tag import Tag
 from kanberoo_core.queries import live
 from kanberoo_core.schemas.tag import TagCreate, TagRead, TagUpdate
 from kanberoo_core.services.audit import emit_audit
+from kanberoo_core.services.events import publish_event
 from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
@@ -108,6 +109,7 @@ def create_tag(
     session.add(tag)
     session.flush()
 
+    after = _dump(tag)
     emit_audit(
         session,
         actor=actor,
@@ -115,7 +117,16 @@ def create_tag(
         entity_id=tag.id,
         action=AuditAction.CREATED,
         before=None,
-        after=_dump(tag),
+        after=after,
+    )
+    publish_event(
+        session,
+        event_type="tag.created",
+        actor=actor,
+        entity_type=AuditEntityType.TAG.value,
+        entity_id=tag.id,
+        entity_version=None,
+        payload=after,
     )
     return tag
 
@@ -203,6 +214,15 @@ def update_tag(
         before=before,
         after=after,
     )
+    publish_event(
+        session,
+        event_type="tag.updated",
+        actor=actor,
+        entity_type=AuditEntityType.TAG.value,
+        entity_id=tag.id,
+        entity_version=None,
+        payload=after,
+    )
     return tag
 
 
@@ -242,6 +262,19 @@ def soft_delete_tag(
         action=AuditAction.SOFT_DELETED,
         before=before,
         after=after,
+    )
+    # Per spec §5.4 the tag delete raises a single ``tag.deleted``
+    # event; no per-association ``story.tag_removed`` events are
+    # published for the detach cascade. Clients refetch affected
+    # stories in response to this event if they care.
+    publish_event(
+        session,
+        event_type="tag.deleted",
+        actor=actor,
+        entity_type=AuditEntityType.TAG.value,
+        entity_id=tag.id,
+        entity_version=None,
+        payload=after,
     )
     return tag
 
@@ -330,6 +363,15 @@ def add_tags_to_story(
             before=None,
             after={"tag_id": tag_id},
         )
+        publish_event(
+            session,
+            event_type="story.tag_added",
+            actor=actor,
+            entity_type=AuditEntityType.STORY.value,
+            entity_id=story_id,
+            entity_version=story.version,
+            payload={"tag_id": tag_id},
+        )
 
     session.flush()
     return story
@@ -375,6 +417,15 @@ def remove_tag_from_story(
         action=AuditAction.TAG_REMOVED,
         before={"tag_id": tag_id},
         after=None,
+    )
+    publish_event(
+        session,
+        event_type="story.tag_removed",
+        actor=actor,
+        entity_type=AuditEntityType.STORY.value,
+        entity_id=story_id,
+        entity_version=story.version,
+        payload={"tag_id": tag_id},
     )
     session.flush()
     return story

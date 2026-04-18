@@ -30,6 +30,7 @@ from kanberoo_core.models.story import Story
 from kanberoo_core.queries import live
 from kanberoo_core.schemas.comment import CommentCreate, CommentRead, CommentUpdate
 from kanberoo_core.services.audit import emit_audit
+from kanberoo_core.services.events import publish_event
 from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
@@ -107,6 +108,7 @@ def create_comment(
     session.add(comment)
     session.flush()
 
+    after = _dump(comment)
     emit_audit(
         session,
         actor=actor,
@@ -114,7 +116,22 @@ def create_comment(
         entity_id=comment.id,
         action=AuditAction.CREATED,
         before=None,
-        after=_dump(comment),
+        after=after,
+    )
+    # Comment creation is surfaced as ``story.commented`` per spec
+    # §5.4: the event is a child event of the story, so
+    # ``entity_type`` / ``entity_id`` point at the story. The story's
+    # version does not change when a comment is added, so
+    # ``entity_version`` is ``None``; clients that want the story
+    # version refetch via REST.
+    publish_event(
+        session,
+        event_type="story.commented",
+        actor=actor,
+        entity_type=AuditEntityType.STORY.value,
+        entity_id=story_id,
+        entity_version=None,
+        payload=after,
     )
     return comment
 
@@ -209,6 +226,15 @@ def update_comment(
         before=before,
         after=after,
     )
+    publish_event(
+        session,
+        event_type="comment.updated",
+        actor=actor,
+        entity_type=AuditEntityType.COMMENT.value,
+        entity_id=comment.id,
+        entity_version=comment.version,
+        payload=after,
+    )
     return comment
 
 
@@ -248,5 +274,14 @@ def soft_delete_comment(
         action=AuditAction.SOFT_DELETED,
         before=before,
         after=after,
+    )
+    publish_event(
+        session,
+        event_type="comment.deleted",
+        actor=actor,
+        entity_type=AuditEntityType.COMMENT.value,
+        entity_id=comment.id,
+        entity_version=comment.version,
+        payload=after,
     )
     return comment

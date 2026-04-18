@@ -29,6 +29,7 @@ from kanberoo_core.schemas.workspace import (
     WorkspaceUpdate,
 )
 from kanberoo_core.services.audit import emit_audit
+from kanberoo_core.services.events import publish_event
 from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
@@ -101,6 +102,7 @@ def create_workspace(
     session.add(workspace)
     session.flush()
 
+    after = _dump(workspace)
     emit_audit(
         session,
         actor=actor,
@@ -108,7 +110,16 @@ def create_workspace(
         entity_id=workspace.id,
         action=AuditAction.CREATED,
         before=None,
-        after=_dump(workspace),
+        after=after,
+    )
+    publish_event(
+        session,
+        event_type="workspace.created",
+        actor=actor,
+        entity_type=AuditEntityType.WORKSPACE.value,
+        entity_id=workspace.id,
+        entity_version=workspace.version,
+        payload=after,
     )
     return workspace
 
@@ -211,6 +222,15 @@ def update_workspace(
         before=before,
         after=after,
     )
+    publish_event(
+        session,
+        event_type="workspace.updated",
+        actor=actor,
+        entity_type=AuditEntityType.WORKSPACE.value,
+        entity_id=workspace.id,
+        entity_version=workspace.version,
+        payload=after,
+    )
     return workspace
 
 
@@ -251,5 +271,14 @@ def soft_delete_workspace(
         action=AuditAction.SOFT_DELETED,
         before=before,
         after=after,
+    )
+    publish_event(
+        session,
+        event_type="workspace.deleted",
+        actor=actor,
+        entity_type=AuditEntityType.WORKSPACE.value,
+        entity_id=workspace.id,
+        entity_version=workspace.version,
+        payload=after,
     )
     return workspace

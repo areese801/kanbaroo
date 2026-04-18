@@ -29,6 +29,7 @@ from kanberoo_core.models.epic import Epic
 from kanberoo_core.queries import live
 from kanberoo_core.schemas.epic import EpicCreate, EpicRead, EpicUpdate
 from kanberoo_core.services.audit import emit_audit
+from kanberoo_core.services.events import publish_event
 from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
@@ -97,6 +98,7 @@ def create_epic(
     session.add(epic)
     session.flush()
 
+    after = _dump(epic)
     emit_audit(
         session,
         actor=actor,
@@ -104,7 +106,16 @@ def create_epic(
         entity_id=epic.id,
         action=AuditAction.CREATED,
         before=None,
-        after=_dump(epic),
+        after=after,
+    )
+    publish_event(
+        session,
+        event_type="epic.created",
+        actor=actor,
+        entity_type=AuditEntityType.EPIC.value,
+        entity_id=epic.id,
+        entity_version=epic.version,
+        payload=after,
     )
     return epic
 
@@ -207,6 +218,15 @@ def update_epic(
         before=before,
         after=after,
     )
+    publish_event(
+        session,
+        event_type="epic.updated",
+        actor=actor,
+        entity_type=AuditEntityType.EPIC.value,
+        entity_id=epic.id,
+        entity_version=epic.version,
+        payload=after,
+    )
     return epic
 
 
@@ -246,6 +266,15 @@ def soft_delete_epic(
         action=AuditAction.SOFT_DELETED,
         before=before,
         after=after,
+    )
+    publish_event(
+        session,
+        event_type="epic.deleted",
+        actor=actor,
+        entity_type=AuditEntityType.EPIC.value,
+        entity_id=epic.id,
+        entity_version=epic.version,
+        payload=after,
     )
     return epic
 
@@ -334,5 +363,14 @@ def _set_state(
         action=AuditAction.UPDATED,
         before=before,
         after=after,
+    )
+    publish_event(
+        session,
+        event_type="epic.updated",
+        actor=actor,
+        entity_type=AuditEntityType.EPIC.value,
+        entity_id=epic.id,
+        entity_version=epic.version,
+        payload=after,
     )
     return epic

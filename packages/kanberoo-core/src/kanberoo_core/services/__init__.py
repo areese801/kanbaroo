@@ -12,6 +12,9 @@ Public submodules:
 
 * :mod:`kanberoo_core.services.audit` exposes :func:`emit_audit`, the
   single helper every service uses to record a mutation.
+* :mod:`kanberoo_core.services.events` exposes :func:`publish_event`,
+  the companion helper that buffers a WebSocket notification event
+  for emission after the caller's transaction commits.
 * :mod:`kanberoo_core.services.exceptions` defines the domain errors
   services raise; API layers translate these into the wire error shape.
 * :mod:`kanberoo_core.services.workspaces` holds CRUD for workspaces.
@@ -28,6 +31,7 @@ from kanberoo_core.services import (
     audit,
     comments,
     epics,
+    events,
     exceptions,
     linkages,
     stories,
@@ -36,6 +40,7 @@ from kanberoo_core.services import (
     workspaces,
 )
 from kanberoo_core.services.audit import emit_audit
+from kanberoo_core.services.events import publish_event
 from kanberoo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
@@ -52,8 +57,10 @@ __all__ = [
     "comments",
     "emit_audit",
     "epics",
+    "events",
     "exceptions",
     "linkages",
+    "publish_event",
     "stories",
     "tags",
     "tokens",
