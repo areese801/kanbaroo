@@ -5,6 +5,18 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 ## [Unreleased]
 
 ### Fixed
+- `kb tag list` now hides soft-deleted tags by default and prints a one-line hint (`Note: N soft-deleted tag(s) not shown. Use --include-deleted to see them.`) when any exist, so operators are not silently missing rows. `--include-deleted` opts back in and dims the deleted names so they are visually distinct from live rows.
+
+### Changed
+- `kb tag list` renders a two-space color swatch next to the hex value in the color column so tags with a color are legible at a glance. Tags with no color render a dash. `--json` output is unchanged (no ANSI escapes for machine consumers).
+- `kb story move KAN-N` now accepts an optional target state: omitting the argument advances the story one step along the spec section 4.3 progression (`backlog -> todo -> in_progress -> in_review -> done`). Calling it on a story already in `done` prints a friendly "already done; nothing to move" note and exits 0 rather than wrapping back to backlog. Explicit-target calls (`kb story move KAN-N done`) work exactly as before.
+- TUI audit rendering (story-detail Audit tab and global Audit feed) now surfaces `<from> → <to>` inline for `state_changed` rows so state transitions are obvious at a glance. Falls back to the prior rendering for every other action. Uses the already-parsed `diff` field from `AuditEventRead`, so no extra round-trip.
+
+### Added
+- TUI quick-advance keybinding: pressing `>` on a focused story card on the board or the epic-detail mini-board transitions the card one step along the natural progression without entering move mode. A card in `done` flashes "already done" and is left untouched. Existing `m` then `b/t/p/r/d` move mode is unchanged. Help overlays updated.
+- CLI and TUI tests: two new tag-list cases (default hide + hint line, `--include-deleted` shows and dims), two new story-move cases (no-arg advance, no-arg on `done` is a no-op with exit 0), four new TUI quick-advance cases (board advance, board done no-op, epic-detail advance, epic-detail done no-op), and two new audit-rendering cases (state transition shown inline in the story-detail Audit tab and in the global audit feed DataTable).
+
+### Fixed
 - TUI editor flow (`c` comment, `e` edit description, `n` new story) no longer crashes on vim exit. The default editor runner previously wrapped `with app.suspend():` inside `asyncio.to_thread`, entering Textual's suspend context on a worker thread and leaving the terminal state inconsistent when the subprocess unwound. The runner now enters `app.suspend()` on the event loop and offloads only the blocking `subprocess.run` to a thread, which is what Textual's driver attach/detach logic assumes, and calls `app.refresh()` on the way out so the first frame after vim exits repaints cleanly.
 - TUI low-priority card badge color changed from bright blue (low contrast on most terminal themes) to sage green (`#7faa3a`) so it remains distinct from the card background without reading as "urgent" or stealing attention from medium/high priority.
 - Spelling: "initialised" is now "initialized" in the `kb init` Rich panel (user-visible) and the TUI's internal "AsyncApiClient not initialized yet" error message. No behavior change.

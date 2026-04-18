@@ -30,7 +30,11 @@ from textual.widgets import Footer, Header
 
 from kanberoo_tui.client import ApiError
 from kanberoo_tui.messages import StorySelected
-from kanberoo_tui.screens.board import COLUMN_STATES, MOVE_KEY_TO_STATE
+from kanberoo_tui.screens.board import (
+    COLUMN_STATES,
+    MOVE_KEY_TO_STATE,
+    next_forward_state,
+)
 from kanberoo_tui.widgets.board_column import BoardColumn
 from kanberoo_tui.widgets.help_modal import KeybindingHelp
 from kanberoo_tui.widgets.story_card import StoryCard
@@ -43,6 +47,7 @@ HELP_ROWS: list[tuple[str, str]] = [
     ("j / k / \u2193 / \u2191", "move within a column"),
     ("enter", "open story detail"),
     ("m then b/t/p/r/d", "move the focused card"),
+    (">", "advance the focused card one step"),
     ("r", "refresh"),
     ("esc / q", "back to epic list"),
     ("?", "this overlay"),
@@ -69,6 +74,12 @@ class EpicDetailScreen(Screen[None]):
         Binding("k", "focus_prev_card", "Prev card", show=False, priority=True),
         Binding("up", "focus_prev_card", "Prev card", show=False, priority=True),
         Binding("m", "enter_move_mode", "Move"),
+        Binding(
+            "greater_than_sign",
+            "quick_advance",
+            "Advance",
+            priority=True,
+        ),
         Binding("enter", "open_detail", "Detail", priority=True),
         Binding("r", "refresh_screen", "Refresh"),
         Binding("?", "show_help", "Help", show=False),
@@ -420,6 +431,29 @@ class EpicDetailScreen(Screen[None]):
             return
         self.notify(f"moved {story.get('human_id')} -> {to_state}")
         await self.refresh_data()
+
+    async def action_quick_advance(self) -> None:
+        """
+        Advance the focused card one step along the natural progression.
+
+        Mirrors the board screen's ``>`` shortcut so the epic mini-board
+        has the same one-keystroke "move forward" affordance.
+        """
+        card = self._focused_card()
+        if card is None:
+            self.notify("no card focused")
+            return
+        story = card.story
+        current_state = str(story.get("state", ""))
+        human_id = str(story.get("human_id", "?"))
+        if current_state == "done":
+            self.notify(f"{human_id} is already done")
+            return
+        target = next_forward_state(current_state)
+        if target is None:
+            self.notify(f"no natural next state from {current_state!r}")
+            return
+        await self._transition_focused(target)
 
     async def handle_ws_event(self, event: dict[str, Any]) -> None:
         """

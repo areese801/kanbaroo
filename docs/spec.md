@@ -594,6 +594,7 @@ kb story show KAN-123
 kb story create --workspace KAN --title "Thing" --priority high --epic KAN-4
 kb story edit KAN-123                     # Opens $EDITOR with markdown body
 kb story move KAN-123 in_progress
+kb story move KAN-123                     # Omit state to advance one step; stories in `done` are a no-op
 kb story comment KAN-123 "Looks good"
 kb story link KAN-123 blocks KAN-456
 

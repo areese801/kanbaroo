@@ -295,6 +295,82 @@ async def test_add_comment_posts_when_non_empty(
         await fake_ws.close()
 
 
+async def test_audit_tab_renders_state_transition(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    A ``state_changed`` audit row on the Audit tab surfaces the
+    ``before -> after`` states prominently rather than burying them in
+    the raw diff.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    # Story, comments, linkages routes used on detail mount.
+    story_body = _story()
+    for _ in range(2):
+        mock_api.add(
+            "GET",
+            "/stories/story-1",
+            lambda _req, body=story_body: httpx.Response(
+                200,
+                json=body,
+                headers={"ETag": str(body["version"])},
+            ),
+        )
+    mock_api.json("GET", "/stories/story-1/comments", body=_empty_list())
+    mock_api.json("GET", "/stories/story-1/comments", body=_empty_list())
+    mock_api.json("GET", "/stories/story-1/linkages", body=_empty_list())
+    mock_api.json("GET", "/stories/story-1/linkages", body=_empty_list())
+    audit_row = {
+        "id": "evt-42",
+        "occurred_at": "2026-04-18T03:00:00Z",
+        "actor_type": "claude",
+        "actor_id": "outer-claude",
+        "entity_type": "story",
+        "entity_id": "story-1",
+        "action": "state_changed",
+        "diff": {
+            "before": {"state": "todo"},
+            "after": {"state": "in_progress"},
+        },
+    }
+    mock_api.json(
+        "GET",
+        "/audit/entity/story/story-1",
+        body={"items": [audit_row], "next_cursor": None},
+    )
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await _open_detail(app, pilot)
+        detail = app.screen
+        assert isinstance(detail, StoryDetailScreen)
+        audit_body = detail.query("#audit-body Static")
+        rendered = " ".join(str(s.content) for s in audit_body)
+        assert "todo" in rendered
+        assert "in_progress" in rendered
+        assert "\u2192" in rendered
+        await fake_ws.close()
+
+
 async def test_add_comment_aborts_when_empty(
     mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
 ):

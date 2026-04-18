@@ -325,10 +325,44 @@ def edit_story(
     )
 
 
+STATE_PROGRESSION: list[str] = [
+    "backlog",
+    "todo",
+    "in_progress",
+    "in_review",
+    "done",
+]
+
+
+def _next_state(current: str) -> str | None:
+    """
+    Return the next natural state after ``current``.
+
+    Follows the forward progression from spec section 4.3
+    (``backlog -> todo -> in_progress -> in_review -> done``). Returns
+    ``None`` when ``current`` is already ``done`` so callers can flash
+    a no-op message rather than wrapping back to ``backlog``.
+    """
+    try:
+        index = STATE_PROGRESSION.index(current)
+    except ValueError:
+        return None
+    if index + 1 >= len(STATE_PROGRESSION):
+        return None
+    return STATE_PROGRESSION[index + 1]
+
+
 @app.command("move")
 def move_story(
     ref: str = typer.Argument(..., help="Story handle (KAN-123) or UUID."),
-    to_state: str = typer.Argument(..., help="Target state."),
+    to_state: str | None = typer.Argument(
+        None,
+        help=(
+            "Target state. Omit to advance one step along the natural "
+            "progression (backlog -> todo -> in_progress -> in_review "
+            "-> done)."
+        ),
+    ),
     reason: str | None = typer.Option(
         None,
         "--reason",
@@ -338,14 +372,39 @@ def move_story(
 ) -> None:
     """
     Transition a story into a new state.
+
+    When ``to_state`` is omitted the story advances one step along the
+    natural progression. A story already in ``done`` is a no-op: the
+    command prints a friendly note and exits 0 rather than wrapping
+    back to ``backlog``.
     """
     config = require_config()
-    payload: dict[str, Any] = {"to_state": to_state}
-    if reason is not None:
-        payload["reason"] = reason
     with build_client(config) as client:
         try:
             story = resolve_story(client, ref)
+        except ApiError as exc:
+            exit_on_api_error(exc)
+        target_state = to_state
+        if target_state is None:
+            current = str(story["state"])
+            if current == "done":
+                stdout_console.print(
+                    f"[yellow]{story['human_id']} is already done; "
+                    "nothing to move.[/yellow]"
+                )
+                return
+            next_state = _next_state(current)
+            if next_state is None:
+                stdout_console.print(
+                    f"[yellow]{story['human_id']} is in state "
+                    f"{current!r}; no natural next state.[/yellow]"
+                )
+                return
+            target_state = next_state
+        payload: dict[str, Any] = {"to_state": target_state}
+        if reason is not None:
+            payload["reason"] = reason
+        try:
             response = client.post_with_etag(
                 f"/stories/{story['id']}",
                 f"/stories/{story['id']}/transition",

@@ -42,6 +42,37 @@ from kanberoo_tui.widgets.story_card import actor_badge
 MAX_ROWS = 500
 FETCH_LIMIT = 50
 
+STATE_CHANGED_ACTION = "state_changed"
+
+
+def format_state_transition(event: dict[str, Any]) -> str | None:
+    """
+    Return a ``<from> -> <to>`` string for a ``state_changed`` audit row.
+
+    Reads ``before.state`` and ``after.state`` out of the already-parsed
+    ``diff`` dict (see ``AuditEventRead`` in ``kanberoo-core``). Appends
+    ``(<reason>)`` when ``after.transition_reason`` is set. Returns
+    ``None`` for any event whose action is not ``state_changed`` or
+    whose diff does not carry the expected shape; callers fall back to
+    their default rendering in that case.
+    """
+    action = str(event.get("action", ""))
+    if action != STATE_CHANGED_ACTION:
+        return None
+    diff = event.get("diff")
+    if not isinstance(diff, dict):
+        return None
+    before = diff.get("before") if isinstance(diff.get("before"), dict) else {}
+    after = diff.get("after") if isinstance(diff.get("after"), dict) else {}
+    from_state = str(before.get("state", "?")) if before else "?"
+    to_state = str(after.get("state", "?")) if after else "?"
+    rendered = f"{from_state} \u2192 {to_state}"
+    reason = after.get("transition_reason") if isinstance(after, dict) else None
+    if reason:
+        rendered = f"{rendered} ({reason})"
+    return rendered
+
+
 HELP_ROWS: list[tuple[str, str]] = [
     ("r", "reconcile from /audit"),
     ("q / esc", "back"),
@@ -237,12 +268,19 @@ class AuditFeedScreen(Screen[None]):
 def _event_row(event: dict[str, Any]) -> tuple[str, str, str, str, str]:
     """
     Convert an event envelope into the five display cells.
+
+    For ``state_changed`` rows the ``action`` cell is augmented with the
+    ``from -> to`` transition so the audit feed makes the move obvious
+    at a glance without forcing the reader to drill into the raw diff.
     """
     when = str(event.get("occurred_at", ""))
     actor_type = str(event.get("actor_type", "?"))
     actor_id = str(event.get("actor_id", "?"))
     actor = f"{actor_badge(actor_type)} {actor_id}"
     action = str(event.get("event_type", event.get("action", "")))
+    transition = format_state_transition(event)
+    if transition is not None:
+        action = f"{action}  {transition}"
     entity = str(event.get("entity_type", ""))
     entity_id = str(event.get("entity_id", ""))
     short_id = entity_id[:8] if entity_id else ""

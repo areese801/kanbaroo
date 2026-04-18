@@ -166,6 +166,107 @@ async def test_epic_detail_places_stories_in_right_columns(
         await fake_ws.close()
 
 
+async def test_epic_detail_quick_advance_moves_card(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``>`` on a focused card inside the epic mini-board
+    transitions to the next state without entering move mode.
+    """
+    _seed_landing(mock_api, [_epic()])
+    initial = [_story("story-1", "KAN-3", state="backlog", version=1)]
+    moved = [_story("story-1", "KAN-3", state="todo", version=2)]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": initial, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": moved, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1",
+        body=initial[0],
+        headers={"ETag": "1"},
+    )
+    mock_api.json(
+        "POST",
+        "/stories/story-1/transition",
+        body=moved[0],
+        status_code=200,
+    )
+
+    app = await _open_detail(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicDetailScreen)
+
+        await pilot.press("greater_than_sign")
+        await pilot.pause()
+        await pilot.pause()
+
+        backlog = screen.query_one("#epic-col-backlog", BoardColumn)
+        todo = screen.query_one("#epic-col-todo", BoardColumn)
+        assert [c.story["human_id"] for c in backlog.cards] == []
+        assert [c.story["human_id"] for c in todo.cards] == ["KAN-3"]
+
+        transitions = [
+            r for r in mock_api.requests if r.path == "/stories/story-1/transition"
+        ]
+        assert len(transitions) == 1
+        assert transitions[0].body == {"to_state": "todo"}
+        await fake_ws.close()
+
+
+async def test_epic_detail_quick_advance_on_done_is_noop(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``>`` on a ``done`` card in the epic mini-board is a
+    no-op: no transition request, card stays in the done column.
+    """
+    _seed_landing(mock_api, [_epic()])
+    stories = [_story("story-1", "KAN-3", state="done", version=1)]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+
+    app = await _open_detail(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicDetailScreen)
+
+        await pilot.press("greater_than_sign")
+        await pilot.pause()
+
+        transitions = [
+            r for r in mock_api.requests if r.path == "/stories/story-1/transition"
+        ]
+        assert transitions == []
+        done = screen.query_one("#epic-col-done", BoardColumn)
+        assert [c.story["human_id"] for c in done.cards] == ["KAN-3"]
+        await fake_ws.close()
+
+
 async def test_epic_detail_move_mode_transitions_story(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):

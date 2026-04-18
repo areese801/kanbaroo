@@ -336,6 +336,107 @@ async def test_board_m_still_works_on_focused_card(
         await fake_ws.close()
 
 
+async def test_board_quick_advance_moves_card_one_step(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``>`` on a focused card transitions it to the next state
+    without an intermediate move-mode keystroke.
+    """
+    initial = [_story("story-1", "KAN-1", state="backlog", version=1)]
+    moved = [_story("story-1", "KAN-1", state="todo", version=2)]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": initial, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": initial, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": moved, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1",
+        body=initial[0],
+        headers={"ETag": "1"},
+    )
+    mock_api.json(
+        "POST",
+        "/stories/story-1/transition",
+        body=moved[0],
+        status_code=200,
+    )
+
+    app = await _open_board(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        board = app.screen
+        assert isinstance(board, BoardScreen)
+        await pilot.press("greater_than_sign")
+        await pilot.pause()
+        await pilot.pause()
+
+        backlog = board.query_one("#col-backlog", BoardColumn)
+        todo = board.query_one("#col-todo", BoardColumn)
+        assert [c.story["human_id"] for c in backlog.cards] == []
+        assert [c.story["human_id"] for c in todo.cards] == ["KAN-1"]
+
+        transitions = [
+            r for r in mock_api.requests if r.path == "/stories/story-1/transition"
+        ]
+        assert len(transitions) == 1
+        assert transitions[0].body == {"to_state": "todo"}
+        await fake_ws.close()
+
+
+async def test_board_quick_advance_on_done_is_noop(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``>`` on a card already in ``done`` flashes a no-op message
+    and does not issue a transition.
+    """
+    stories = [_story("story-1", "KAN-1", state="done", version=1)]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+
+    app = await _open_board(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        board = app.screen
+        assert isinstance(board, BoardScreen)
+        await pilot.press("greater_than_sign")
+        await pilot.pause()
+
+        transitions = [
+            r for r in mock_api.requests if r.path == "/stories/story-1/transition"
+        ]
+        assert transitions == []
+        done = board.query_one("#col-done", BoardColumn)
+        assert [c.story["human_id"] for c in done.cards] == ["KAN-1"]
+        await fake_ws.close()
+
+
 async def test_board_q_pops_with_focused_card(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):

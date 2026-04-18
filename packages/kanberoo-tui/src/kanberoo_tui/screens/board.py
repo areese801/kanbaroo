@@ -58,6 +58,33 @@ MOVE_KEY_TO_STATE: dict[str, str] = {
     "d": "done",
 }
 
+STATE_PROGRESSION: list[str] = [
+    "backlog",
+    "todo",
+    "in_progress",
+    "in_review",
+    "done",
+]
+
+
+def next_forward_state(current: str) -> str | None:
+    """
+    Return the next natural state after ``current``.
+
+    Mirrors the CLI helper so the TUI quick-advance keybinding and
+    ``kb story move`` share one progression. Returns ``None`` when
+    ``current`` is ``done`` (or an unknown state); callers flash a
+    no-op message instead of wrapping back to ``backlog``.
+    """
+    try:
+        index = STATE_PROGRESSION.index(current)
+    except ValueError:
+        return None
+    if index + 1 >= len(STATE_PROGRESSION):
+        return None
+    return STATE_PROGRESSION[index + 1]
+
+
 STORY_EVENT_PREFIX = "story."
 
 NEW_STORY_TEMPLATE = "# Title (replace this line)\n\n# Description below\n\n"
@@ -69,6 +96,7 @@ HELP_ROWS: list[tuple[str, str]] = [
     ("j / k / \u2193 / \u2191", "move within a column"),
     ("enter", "open story detail"),
     ("m then b/t/p/r/d", "move the focused card"),
+    (">", "advance the focused card one step"),
     ("n", "new story via $EDITOR"),
     ("/", "fuzzy search"),
     ("r", "refresh board"),
@@ -96,6 +124,12 @@ class BoardScreen(Screen[None]):
         Binding("k", "focus_prev_card", "Prev card", show=False, priority=True),
         Binding("up", "focus_prev_card", "Prev card", show=False, priority=True),
         Binding("m", "enter_move_mode", "Move"),
+        Binding(
+            "greater_than_sign",
+            "quick_advance",
+            "Advance",
+            priority=True,
+        ),
         Binding("enter", "open_detail", "Detail"),
         Binding("n", "new_story", "New"),
         Binding("slash", "open_search", "Search", show=False),
@@ -502,6 +536,31 @@ class BoardScreen(Screen[None]):
             return
         self.notify(f"moved {story.get('human_id')} -> {to_state}")
         await self.refresh_data()
+
+    async def action_quick_advance(self) -> None:
+        """
+        Advance the focused card one step along the natural progression.
+
+        Pressing ``>`` saves the two-keystroke ``m`` then ``t``/``p``/
+        ``r``/``d`` dance for the common "move to the next column" case.
+        A card already in ``done`` flashes a no-op message rather than
+        wrapping back to ``backlog``.
+        """
+        card = self._focused_card()
+        if card is None:
+            self.notify("no card focused")
+            return
+        story = card.story
+        current_state = str(story.get("state", ""))
+        human_id = str(story.get("human_id", "?"))
+        if current_state == "done":
+            self.notify(f"{human_id} is already done")
+            return
+        target = next_forward_state(current_state)
+        if target is None:
+            self.notify(f"no natural next state from {current_state!r}")
+            return
+        await self._transition_focused(target)
 
     async def handle_ws_event(self, event: dict[str, Any]) -> None:
         """

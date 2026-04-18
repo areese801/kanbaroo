@@ -29,6 +29,38 @@ app = typer.Typer(
 )
 
 
+def _swatch_markup(color: str | None) -> str:
+    """
+    Build a Rich-markup color swatch for the ``color`` column.
+
+    Renders a two-space background-coloured block followed by the hex
+    text so the listing shows both the swatch and the raw value. Tags
+    with no colour get a plain dash so the column never collapses to
+    an empty cell.
+    """
+    if not color:
+        return "-"
+    return f"[on {color}]  [/]  {color}"
+
+
+def _tag_row(item: dict[str, Any]) -> list[str]:
+    """
+    Format a single tag record into a :func:`print_table` row.
+
+    Soft-deleted rows dim the ``name`` cell so they are obviously
+    distinct from live tags when ``--include-deleted`` is active.
+    """
+    name = str(item["name"])
+    is_deleted = bool(item["deleted_at"])
+    name_cell = f"[dim]{name}[/dim]" if is_deleted else name
+    return [
+        name_cell,
+        _swatch_markup(item["color"]),
+        str(item["id"]),
+        "yes" if is_deleted else "no",
+    ]
+
+
 @app.command("list")
 def list_tags(
     workspace: str | None = typer.Option(
@@ -48,40 +80,48 @@ def list_tags(
 ) -> None:
     """
     List every tag in a workspace.
+
+    Soft-deleted tags are hidden by default. When any exist a short
+    hint points at ``--include-deleted`` so the CLI does not silently
+    omit them.
     """
     config = require_config()
     workspace_ref = require_effective_workspace(workspace, config)
     with build_client(config) as client:
         try:
             ws = resolve_workspace(client, workspace_ref)
-            params: dict[str, Any] = {}
-            if include_deleted:
-                params["include_deleted"] = True
+            # Always request the full set so we can count soft-deleted
+            # tags without a second round-trip. Tag volume per
+            # workspace is small (single-page), so the cost is nil.
             response = client.get(
                 f"/workspaces/{ws['id']}/tags",
-                params=params or None,
+                params={"include_deleted": True},
             )
         except ApiError as exc:
             exit_on_api_error(exc)
         items = response.json()["items"]
 
+    deleted_items = [item for item in items if item["deleted_at"]]
+    displayed = (
+        items if include_deleted else [item for item in items if not item["deleted_at"]]
+    )
+
     if as_json:
-        print_json(items)
+        print_json(displayed)
         return
-    rows = [
-        [
-            str(item["name"]),
-            str(item["color"] or ""),
-            str(item["id"]),
-            "yes" if item["deleted_at"] else "no",
-        ]
-        for item in items
-    ]
+    rows = [_tag_row(item) for item in displayed]
     print_table(
         columns=["name", "color", "id", "deleted"],
         rows=rows,
         title=f"tags in {ws['key']}",
     )
+    if not include_deleted and deleted_items:
+        count = len(deleted_items)
+        plural = "" if count == 1 else "s"
+        stdout_console.print(
+            f"[dim]Note: {count} soft-deleted tag{plural} not shown. "
+            "Use --include-deleted to see them.[/dim]"
+        )
 
 
 @app.command("create")
