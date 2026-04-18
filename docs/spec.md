@@ -165,7 +165,7 @@ This is a first-class design constraint, not an afterthought:
 - **Workspace**: Top-level container. Roughly "a product" or "a consulting engagement." Owns a key prefix (e.g. `KAN` for Kanberoo itself) used to generate human IDs. May be associated with zero or more git repositories.
 - **Epic** (optional): Container for related stories. Roughly "a milestone" or "a major feature." Stories may belong to exactly one epic or directly to a workspace with no epic.
 - **Story**: The unit of work. Maps mentally to "a pull request." Has title, markdown description, priority, state, tags, comments, linkages.
-- **Linkage**: A typed, directed relationship between two stories (or between a story and an epic). Types: `relates_to`, `blocks`, `is_blocked_by`, `duplicates`, `is_duplicated_by`. Blocking pairs are automatically mirrored.
+- **Linkage**: A typed, directed relationship between two stories (or between a story and an epic). Types: `relates_to`, `blocks`, `is_blocked_by`, `duplicates`, `is_duplicated_by`. Blocking and duplication pairs are automatically mirrored (creating one end atomically creates the opposite end, and deleting either end soft-deletes its mirror); `relates_to` has no paired opposite and is stored unidirectionally.
 - **Comment**: Markdown text attached to a story. Threaded exactly one level deep (replies cannot have replies).
 - **Tag**: Workspace-scoped label attached to stories. A tag named `bug` in workspace A is a different row from `bug` in workspace B.
 - **Audit event**: Immutable record of every mutation. Every create, update, soft-delete, transition, and comment is logged.

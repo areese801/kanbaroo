@@ -2,18 +2,15 @@
 Linkage CRUD service.
 
 A linkage is a typed, directed relationship between two issues (story
-or epic). Per ``docs/spec.md`` section 3.1, only the
-``blocks``/``is_blocked_by`` pair is automatically mirrored by this
-service: creating a ``blocks`` row atomically creates the matching
-``is_blocked_by`` row on the other side, and deleting either end
-soft-deletes the other.
+or epic). Per ``docs/spec.md`` section 3.1, both the
+``blocks``/``is_blocked_by`` and ``duplicates``/``is_duplicated_by``
+pairs are automatically mirrored by this service: creating one end
+atomically creates the matching row on the other side, and deleting
+either end soft-deletes its mirror.
 
-``relates_to``, ``duplicates``, and ``is_duplicated_by`` are left
-unidirectional: the caller chooses which end of the pair to attach a
-``duplicates`` to, and the reciprocal ``is_duplicated_by`` is not
-created automatically. If future spec revisions decide those pairs
-should also be mirrored, extending :data:`_MIRROR` is a one-line
-change.
+``relates_to`` is left unidirectional: it has no paired opposite, so
+it is stored exactly as the caller supplied it and clients query both
+``source`` and ``target`` to see related issues in either direction.
 
 Cross-workspace linkages are allowed per spec §10 Q2. Both endpoints
 must exist and be live; self-linkage is rejected; duplicate endpoints
@@ -58,6 +55,8 @@ from kanberoo_core.time import utc_now_iso
 _MIRROR: dict[LinkType, LinkType] = {
     LinkType.BLOCKS: LinkType.IS_BLOCKED_BY,
     LinkType.IS_BLOCKED_BY: LinkType.BLOCKS,
+    LinkType.DUPLICATES: LinkType.IS_DUPLICATED_BY,
+    LinkType.IS_DUPLICATED_BY: LinkType.DUPLICATES,
 }
 
 
@@ -134,8 +133,8 @@ def create_linkage(
     payload: LinkageCreate,
 ) -> Linkage:
     """
-    Create a linkage (and, for blocking pairs, its mirror) and emit a
-    single ``created`` audit row.
+    Create a linkage (and, for blocking or duplication pairs, its
+    mirror) and emit a single ``created`` audit row.
 
     Validation:
 
@@ -146,11 +145,11 @@ def create_linkage(
       "the same" linkage twice is treated as a client bug, not an
       idempotent no-op.
 
-    For ``blocks`` / ``is_blocked_by``, the mirror row is inserted
-    atomically in the same transaction. Clients see a single logical
-    linkage; the mirror is invisible except by direct table read.
-    Other link types (``relates_to``, ``duplicates``,
-    ``is_duplicated_by``) are left unidirectional.
+    For ``blocks``/``is_blocked_by`` and ``duplicates``/
+    ``is_duplicated_by``, the mirror row is inserted atomically in the
+    same transaction. Clients see a single logical linkage; the mirror
+    is invisible except by direct table read. ``relates_to`` has no
+    paired opposite and is left unidirectional.
     """
     _verify_endpoint_live(
         session,
