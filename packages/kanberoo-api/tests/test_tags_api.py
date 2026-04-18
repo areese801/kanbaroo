@@ -178,3 +178,41 @@ def test_cross_workspace_tagging_rejected_at_api(
         headers=human_auth.headers,
     )
     assert response.status_code == 400
+
+
+def test_similar_tags_endpoint_empty_and_match(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    ``GET /workspaces/{id}/tags/similar`` returns an empty list when
+    nothing matches and the matching tag when one does. Casing and
+    punctuation differences still match.
+    """
+    ws = _create_workspace(client, human_auth)
+    empty = client.get(
+        f"/api/v1/workspaces/{ws['id']}/tags/similar?name=Anything",
+        headers=human_auth.headers,
+    )
+    assert empty.status_code == 200
+    assert empty.json() == {"items": []}
+
+    tag = client.post(
+        f"/api/v1/workspaces/{ws['id']}/tags",
+        json={"name": "UI"},
+        headers=human_auth.headers,
+    ).json()
+    matched = client.get(
+        f"/api/v1/workspaces/{ws['id']}/tags/similar",
+        params={"name": "u-i"},
+        headers=human_auth.headers,
+    )
+    assert matched.status_code == 200
+    assert [t["id"] for t in matched.json()["items"]] == [tag["id"]]
+
+
+def test_similar_tags_requires_auth(client: TestClient) -> None:
+    """
+    The endpoint refuses unauthenticated callers.
+    """
+    response = client.get("/api/v1/workspaces/anything/tags/similar?name=x")
+    assert response.status_code == 401

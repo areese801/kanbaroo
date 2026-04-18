@@ -439,6 +439,16 @@ PATCH  /tags/{id}                          # Rename, recolor
 DELETE /tags/{id}                          # Soft delete (detaches from stories)
 ```
 
+#### Similar (duplicate-detection helpers)
+
+```
+GET    /workspaces/{id}/stories/similar?title=...   # Read: live stories whose normalised title matches
+GET    /workspaces/{id}/epics/similar?title=...     # Read: live epics whose normalised title matches
+GET    /workspaces/{id}/tags/similar?name=...       # Read: live tags whose normalised name matches
+```
+
+Read-only and auth-gated. Each returns the same envelope its sibling list endpoint uses (an empty `items` array when nothing matches) and honors `?include_deleted=true`. Normalisation lowercases and strips every non-alphanumeric character, so `Fix the bug!` and `fix-the-bug` collide while `Fix bug` and `Fix the bug` do not. Clients (CLI, TUI, MCP) call these before creating an entity to warn the user about likely duplicates; creation itself is never blocked at the service layer.
+
 #### Audit
 
 ```

@@ -36,6 +36,7 @@ from kanberoo_cli.resolvers import (
     resolve_story,
     resolve_workspace,
 )
+from kanberoo_cli.similar import fetch_similar_entities, print_similar_entities
 
 app = typer.Typer(
     name="story",
@@ -188,16 +189,42 @@ def create_story(
         "--epic",
         help="Associate the story with an epic (KAN-N or UUID).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Skip the duplicate-title prompt and create the story regardless.",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """
     Create a new story.
+
+    Before posting we ask the server for stories with a normalised
+    title equivalent to ``title``. In interactive mode (no ``--json``)
+    a non-empty result triggers a yes/no prompt so the user can abort
+    a likely duplicate. ``--force`` skips the prompt; ``--json`` never
+    prompts but folds the matches into a ``warnings`` field on the
+    output.
     """
     config = require_config()
     workspace_ref = require_effective_workspace(workspace, config)
+    similar: list[dict[str, Any]] = []
     with build_client(config) as client:
         try:
             ws = resolve_workspace(client, workspace_ref)
+            similar = fetch_similar_entities(
+                client,
+                workspace_id=str(ws["id"]),
+                resource="stories",
+                field_name="title",
+                value=title,
+            )
+            if similar and not as_json and not force:
+                print_similar_entities(similar, label_key="human_id", entity="story")
+                confirmed = typer.confirm("Create anyway?", default=False)
+                if not confirmed:
+                    stdout_console.print("aborted: existing entity has a similar name")
+                    raise typer.Exit(code=1)
             payload: dict[str, Any] = {
                 "title": title,
                 "priority": priority,
@@ -216,6 +243,8 @@ def create_story(
         body = response.json()
 
     if as_json:
+        if similar:
+            body = {**body, "warnings": {"similar": [s["id"] for s in similar]}}
         print_json(body)
         return
     print_table(

@@ -4,6 +4,7 @@ Tests for ``kb epic``.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,11 @@ def test_epic_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> None
     del config_dir
     mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
     mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/epics/similar",
+        body={"items": [], "next_cursor": None},
+    )
+    mock_api.json(
         "POST",
         "/workspaces/ws-kan/epics",
         body=_epic_body(),
@@ -88,6 +94,94 @@ def test_epic_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> None
     )
     assert result.exit_code == 0, result.stderr
     assert mock_api.requests[-1].body == {"title": "big"}
+
+
+def test_epic_create_force_skips_prompt_with_similar(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    With ``--force`` the CLI ignores duplicate matches and POSTs
+    without prompting.
+    """
+    del config_dir
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/epics/similar",
+        body={"items": [_epic_body()], "next_cursor": None},
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/epics",
+        body=_epic_body(),
+        status_code=201,
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(
+        app,
+        ["epic", "create", "--workspace", "KAN", "--title", "big", "--force"],
+    )
+    assert result.exit_code == 0, result.stderr
+    posts = [r for r in mock_api.requests if r.method == "POST"]
+    assert posts and posts[0].path == "/workspaces/ws-kan/epics"
+
+
+def test_epic_create_prompt_reject_aborts(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    Answering ``n`` aborts the create.
+    """
+    del config_dir
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/epics/similar",
+        body={"items": [_epic_body()], "next_cursor": None},
+    )
+    result = runner.invoke(
+        app,
+        ["epic", "create", "--workspace", "KAN", "--title", "big"],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    posts = [
+        r
+        for r in mock_api.requests
+        if r.method == "POST" and r.path == "/workspaces/ws-kan/epics"
+    ]
+    assert posts == []
+
+
+def test_epic_create_json_includes_warnings(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    With ``--json`` the CLI never prompts and folds the matches into
+    ``warnings`` on the result.
+    """
+    del config_dir
+    similar = _epic_body()
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/epics/similar",
+        body={"items": [similar], "next_cursor": None},
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/epics",
+        body=_epic_body(human_id="KAN-9", epic_id="epic-9"),
+        status_code=201,
+    )
+    result = runner.invoke(
+        app,
+        ["epic", "create", "--workspace", "KAN", "--title", "big", "--json"],
+    )
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["id"] == "epic-9"
+    assert payload["warnings"] == {"similar": [similar["id"]]}
 
 
 def test_epic_show_by_key(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:

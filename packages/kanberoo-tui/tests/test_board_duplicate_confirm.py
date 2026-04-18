@@ -1,13 +1,13 @@
 """
-Tests for the board ``n`` keybinding (new story via ``$EDITOR``).
+Tests for the duplicate-title confirmation modal that runs between
+the new-story editor and the create POST.
 
-Focuses on three things:
+Two scenarios:
 
-* The template is round-tripped through the fake editor.
-* A POST to ``/workspaces/{id}/stories`` is issued with the parsed
-  title and description.
-* A subsequent WebSocket ``story.created`` event causes the board to
-  refetch, and the new card appears in the Backlog column.
+* The similar endpoint returns a non-empty list, the confirm modal
+  appears, the user cancels it, no POST is sent.
+* The similar endpoint returns a non-empty list, the user confirms
+  it, the POST runs and the board refetches.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import httpx
 
 from kanberoo_tui.app import KanberooTuiApp
 from kanberoo_tui.screens.board import BoardScreen
-from kanberoo_tui.widgets.board_column import BoardColumn
+from kanberoo_tui.widgets.duplicate_confirm import DuplicateConfirm
 
 
 def _empty_list():
@@ -59,42 +59,27 @@ def _story(id_, human_id, title="A story"):
     }
 
 
-async def test_new_story_posts_parsed_template_and_refetches(
+async def test_new_story_with_similar_cancels_via_modal(
     mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
 ):
-    # Workspace list + counts.
+    """
+    A non-empty ``stories/similar`` response opens the confirm modal;
+    pressing ``n`` dismisses it without a POST.
+    """
     mock_api.json(
-        "GET",
-        "/workspaces",
-        body={"items": [_workspace()], "next_cursor": None},
+        "GET", "/workspaces", body={"items": [_workspace()], "next_cursor": None}
     )
     mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
-    # Three list responses for board: workspace-list count, board
-    # initial, and board refetch after the WS story.created event.
     mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
     mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
-    mock_api.json(
-        "GET",
-        "/workspaces/ws-1/stories",
-        body={
-            "items": [_story("story-99", "KAN-99", title="My new story")],
-            "next_cursor": None,
-        },
-    )
-    # Empty similar response: no duplicate confirmation modal.
     mock_api.json(
         "GET",
         "/workspaces/ws-1/stories/similar",
-        body={"items": [], "next_cursor": None},
+        body={
+            "items": [_story("story-1", "KAN-1", title="My new story")],
+            "next_cursor": None,
+        },
     )
-    # POST story endpoint: the template output populates the body.
-    new_story = _story("story-99", "KAN-99", title="My new story")
-    mock_api.add(
-        "POST",
-        "/workspaces/ws-1/stories",
-        lambda _req: httpx.Response(201, json=new_story),
-    )
-    # Fake editor fills the template with a real title and description.
     fake_editor.content_to_write = "# My new story\n\nSome description text.\n"
 
     app = KanberooTuiApp(
@@ -113,57 +98,58 @@ async def test_new_story_posts_parsed_template_and_refetches(
         await pilot.press("n")
         await pilot.pause()
         await pilot.pause()
+        assert isinstance(app.screen, DuplicateConfirm)
 
-        create_requests = [
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, BoardScreen)
+
+        creates = [
             r
             for r in mock_api.requests
             if r.method == "POST" and r.path == "/workspaces/ws-1/stories"
         ]
-        assert len(create_requests) == 1
-        payload = create_requests[0].body
-        assert payload == {
-            "title": "My new story",
-            "description": "Some description text.",
-        }
-
-        # Simulate the server's ws.story.created event so the board
-        # refetches (the third pre-registered story list response
-        # contains the new card).
-        await fake_ws.push(
-            {
-                "event_id": "evt-1",
-                "event_type": "story.created",
-                "occurred_at": "2026-04-18T02:00:00Z",
-                "actor_type": "human",
-                "actor_id": "adam",
-                "entity_type": "story",
-                "entity_id": "story-99",
-                "entity_version": 1,
-                "payload": {},
-            }
-        )
-        await pilot.pause()
-        await pilot.pause()
-        backlog = app.screen.query_one("#col-backlog", BoardColumn)
-        assert [c.story["human_id"] for c in backlog.cards] == ["KAN-99"]
+        assert creates == []
         await fake_ws.close()
 
 
-async def test_new_story_aborts_on_unchanged_template(
+async def test_new_story_with_similar_proceeds_when_confirmed(
     mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
 ):
+    """
+    Confirming the modal with ``y`` proceeds with the create.
+    """
     mock_api.json(
-        "GET",
-        "/workspaces",
-        body={"items": [_workspace()], "next_cursor": None},
+        "GET", "/workspaces", body={"items": [_workspace()], "next_cursor": None}
     )
     mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
     mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
     mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
-    # Editor rewrites the template with no material change (same
-    # placeholder title). Without an explicit POST route the test will
-    # trip MockApi's assertion if the abort logic is broken.
-    fake_editor.content_to_write = None
+    # Final refetch shows the new card.
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={
+            "items": [_story("story-99", "KAN-99", title="My new story")],
+            "next_cursor": None,
+        },
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories/similar",
+        body={
+            "items": [_story("story-1", "KAN-1", title="My new story")],
+            "next_cursor": None,
+        },
+    )
+    new_story = _story("story-99", "KAN-99", title="My new story")
+    mock_api.add(
+        "POST",
+        "/workspaces/ws-1/stories",
+        lambda _req: httpx.Response(201, json=new_story),
+    )
+    fake_editor.content_to_write = "# My new story\n\nSome description text.\n"
 
     app = KanberooTuiApp(
         config=tui_config,
@@ -176,13 +162,22 @@ async def test_new_story_aborts_on_unchanged_template(
         await pilot.press("enter")
         await pilot.pause()
         await pilot.pause()
+        assert isinstance(app.screen, BoardScreen)
+
         await pilot.press("n")
         await pilot.pause()
         await pilot.pause()
+        assert isinstance(app.screen, DuplicateConfirm)
+
+        await pilot.press("y")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, BoardScreen)
+
         creates = [
             r
             for r in mock_api.requests
             if r.method == "POST" and r.path == "/workspaces/ws-1/stories"
         ]
-        assert creates == []
+        assert len(creates) == 1
         await fake_ws.close()

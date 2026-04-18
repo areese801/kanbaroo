@@ -43,9 +43,20 @@ def _list_epics(client: McpApiClient, args: dict[str, Any]) -> dict[str, Any]:
 def _create_epic(client: McpApiClient, args: dict[str, Any]) -> dict[str, Any]:
     """
     Handler for ``create_epic``.
+
+    Always queries ``/workspaces/{id}/epics/similar`` first; the
+    matches are returned in ``warnings.similar`` so the outer Claude
+    can relay the warning to the user. Creation is never blocked
+    here: the agent surfaces the concern, the user decides.
     """
     workspace = resolve_workspace(client, args["workspace"])
-    payload: dict[str, Any] = {"title": args["title"]}
+    title = args["title"]
+    similar_response = client.get(
+        f"/workspaces/{workspace['id']}/epics/similar",
+        params={"title": title},
+    )
+    similar = list(similar_response.json().get("items", []))
+    payload: dict[str, Any] = {"title": title}
     if args.get("description") is not None:
         payload["description"] = args["description"]
     response = client.post(
@@ -53,7 +64,13 @@ def _create_epic(client: McpApiClient, args: dict[str, Any]) -> dict[str, Any]:
         json=payload,
     )
     created: dict[str, Any] = response.json()
-    return {"message": f"created epic {created['human_id']}", "epic": created}
+    result: dict[str, Any] = {
+        "message": f"created epic {created['human_id']}",
+        "epic": created,
+    }
+    if similar:
+        result["warnings"] = {"similar": similar}
+    return result
 
 
 def _update_epic(client: McpApiClient, args: dict[str, Any]) -> dict[str, Any]:

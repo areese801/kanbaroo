@@ -61,6 +61,33 @@ def list_tags(
     return TagListResponse(items=[TagRead.model_validate(row) for row in rows])
 
 
+@workspace_router.get(
+    "/{workspace_id}/tags/similar",
+    response_model=TagListResponse,
+)
+def find_similar_tags(
+    workspace_id: str,
+    name: str = Query(..., description="Tag name to compare against."),
+    include_deleted: bool = Query(False),
+    session: Session = Depends(get_session),
+    _actor: Actor = Depends(resolve_actor),
+) -> TagListResponse:
+    """
+    Return tags in ``workspace_id`` whose name is normalised
+    equivalent to ``name``.
+
+    Used by clients to warn the user before creating a duplicate
+    tag with cosmetically different casing or punctuation.
+    """
+    rows = tag_service.find_similar_tags(
+        session,
+        workspace_id=workspace_id,
+        name=name,
+        include_deleted=include_deleted,
+    )
+    return TagListResponse(items=[TagRead.model_validate(row) for row in rows])
+
+
 @workspace_router.post(
     "/{workspace_id}/tags",
     response_model=TagRead,

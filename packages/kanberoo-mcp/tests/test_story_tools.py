@@ -119,8 +119,14 @@ def test_create_story_resolves_epic_human_id(
 ) -> None:
     """
     A human-id epic reference resolves to a UUID before the POST.
+    With no similar matches, the result has no ``warnings`` field.
     """
     mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/stories/similar",
+        body={"items": [], "next_cursor": None},
+    )
     mock_api.json("GET", "/epics/by-key/KAN-4", body=epic_body())
     mock_api.json(
         "POST",
@@ -138,12 +144,42 @@ def test_create_story_resolves_epic_human_id(
         },
     )
     assert result["story"]["human_id"] == "KAN-7"
+    assert "warnings" not in result
     post = [r for r in mock_api.requests if r.method == "POST"][0]
     assert post.body == {
         "title": "New thing",
         "priority": "high",
         "epic_id": "epic-1",
     }
+
+
+def test_create_story_includes_warnings_when_similar(
+    mock_api: MockApi, client: McpApiClient
+) -> None:
+    """
+    A non-empty similar response is folded into ``warnings.similar``
+    so the outer Claude can relay the duplicate hint without
+    blocking the create.
+    """
+    similar = story_body(human_id="KAN-1", story_id="story-1")
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=ws_body("KAN"))
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/stories/similar",
+        body={"items": [similar], "next_cursor": None},
+    )
+    mock_api.json(
+        "POST",
+        "/workspaces/ws-kan/stories",
+        status_code=201,
+        body=story_body(human_id="KAN-7", story_id="story-7"),
+    )
+    result = _handler("create_story")(
+        client,
+        {"workspace": "KAN", "title": "Fix the bug"},
+    )
+    assert result["story"]["human_id"] == "KAN-7"
+    assert result["warnings"] == {"similar": [similar]}
 
 
 def test_update_story_sends_if_match_header(

@@ -35,6 +35,7 @@ from kanberoo_core.services.exceptions import (
     ValidationError,
     VersionConflictError,
 )
+from kanberoo_core.text import normalize_for_comparison
 from kanberoo_core.time import utc_now_iso
 
 DEFAULT_PAGE_LIMIT = 50
@@ -304,6 +305,34 @@ def soft_delete_epic(
         payload=after,
     )
     return epic
+
+
+def find_similar_epics(
+    session: Session,
+    *,
+    workspace_id: str,
+    title: str,
+    include_deleted: bool = False,
+) -> list[Epic]:
+    """
+    Return epics in ``workspace_id`` whose title normalises to the
+    same canonical form as ``title``.
+
+    Mirrors :func:`kanberoo_core.services.stories.find_similar_stories`;
+    see that docstring for the normalisation rules and the scaling
+    note.
+    """
+    needle = normalize_for_comparison(title)
+    if not needle:
+        return []
+    stmt = select(Epic).where(Epic.workspace_id == workspace_id)
+    if not include_deleted:
+        stmt = live(stmt, Epic)
+    stmt = stmt.order_by(Epic.id)
+    candidates = list(session.execute(stmt).scalars().all())
+    return [
+        epic for epic in candidates if normalize_for_comparison(epic.title) == needle
+    ]
 
 
 def close_epic(

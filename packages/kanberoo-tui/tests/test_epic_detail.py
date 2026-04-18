@@ -12,7 +12,11 @@ Covers:
 from __future__ import annotations
 
 from kanberoo_tui.app import KanberooTuiApp
-from kanberoo_tui.screens.board import COLUMN_STATES
+from kanberoo_tui.screens.board import (
+    COLUMN_STATES,
+    SORT_MODE_ID_ASC,
+    SORT_MODE_PRIORITY_DESC,
+)
 from kanberoo_tui.screens.epic_detail import EpicDetailScreen
 from kanberoo_tui.screens.epic_list import EpicListScreen
 from kanberoo_tui.widgets.board_column import BoardColumn
@@ -333,4 +337,66 @@ async def test_epic_detail_move_mode_transitions_story(
         assert transitions[0].method == "POST"
         assert transitions[0].body == {"to_state": "todo"}
         assert transitions[0].headers.get("if-match") == "1"
+        await fake_ws.close()
+
+
+async def test_epic_detail_priority_sort_toggle(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``s`` on the epic mini-board reorders the column to
+    priority-desc; pressing it again returns to id-asc.
+    """
+    _seed_landing(mock_api, [_epic()])
+    stories = [
+        _story("story-a", "KAN-3", state="backlog"),
+        _story("story-b", "KAN-4", state="backlog"),
+        _story("story-c", "KAN-5", state="backlog"),
+    ]
+    stories[0]["priority"] = "low"
+    stories[1]["priority"] = "high"
+    stories[2]["priority"] = "medium"
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+
+    app = await _open_detail(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicDetailScreen)
+        backlog = screen.query_one("#epic-col-backlog", BoardColumn)
+        assert [c.story["human_id"] for c in backlog.cards] == [
+            "KAN-3",
+            "KAN-4",
+            "KAN-5",
+        ]
+
+        await pilot.press("s")
+        await pilot.pause()
+        assert screen.sort_mode == SORT_MODE_PRIORITY_DESC
+        backlog = screen.query_one("#epic-col-backlog", BoardColumn)
+        assert [c.story["human_id"] for c in backlog.cards] == [
+            "KAN-4",
+            "KAN-5",
+            "KAN-3",
+        ]
+
+        await pilot.press("s")
+        await pilot.pause()
+        assert screen.sort_mode == SORT_MODE_ID_ASC
+        backlog = screen.query_one("#epic-col-backlog", BoardColumn)
+        assert [c.story["human_id"] for c in backlog.cards] == [
+            "KAN-3",
+            "KAN-4",
+            "KAN-5",
+        ]
         await fake_ws.close()

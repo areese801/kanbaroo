@@ -33,11 +33,16 @@ from kanberoo_tui.messages import StorySelected
 from kanberoo_tui.screens.board import (
     COLUMN_STATES,
     MOVE_KEY_TO_STATE,
+    SORT_MODE_CYCLE,
+    SORT_MODE_ID_ASC,
+    SORT_MODE_PRIORITY_DESC,
     next_forward_state,
+    sort_stories,
 )
 from kanberoo_tui.widgets.board_column import BoardColumn
 from kanberoo_tui.widgets.help_modal import KeybindingHelp
 from kanberoo_tui.widgets.story_card import StoryCard
+from kanberoo_tui.widgets.tag_filter import TagFilterPicker
 
 EPIC_EVENT_PREFIX = "epic."
 STORY_EVENT_PREFIX = "story."
@@ -48,6 +53,9 @@ HELP_ROWS: list[tuple[str, str]] = [
     ("enter", "open story detail"),
     ("m then b/t/p/r/d", "move the focused card"),
     (">", "advance the focused card one step"),
+    ("f", "filter by tag"),
+    ("F", "clear tag filter"),
+    ("s", "cycle sort mode (id / priority)"),
     ("r", "refresh"),
     ("esc / q", "back to epic list"),
     ("?", "this overlay"),
@@ -81,6 +89,9 @@ class EpicDetailScreen(Screen[None]):
             priority=True,
         ),
         Binding("enter", "open_detail", "Detail", priority=True),
+        Binding("f", "open_tag_filter", "Filter", priority=True),
+        Binding("F", "clear_tag_filter", "Clear filter", priority=True),
+        Binding("s", "cycle_sort", "Sort", priority=True),
         Binding("r", "refresh_screen", "Refresh"),
         Binding("?", "show_help", "Help", show=False),
         Binding("q", "back", "Back", priority=True),
@@ -108,6 +119,8 @@ class EpicDetailScreen(Screen[None]):
         self._move_mode: bool = False
         self._active_col: int = 0
         self._active_row: int = 0
+        self._active_tag_filter: list[tuple[str, str]] = []
+        self._sort_mode: str = SORT_MODE_ID_ASC
 
     @property
     def workspace(self) -> dict[str, Any]:
@@ -145,6 +158,21 @@ class EpicDetailScreen(Screen[None]):
         """
         return self._move_mode
 
+    @property
+    def active_tag_filter(self) -> list[tuple[str, str]]:
+        """
+        Return the active ``(tag_id, tag_name)`` filter; empty means
+        "no filter active".
+        """
+        return list(self._active_tag_filter)
+
+    @property
+    def sort_mode(self) -> str:
+        """
+        Return the active sort mode (``id-asc`` or ``priority-desc``).
+        """
+        return self._sort_mode
+
     def compose(self) -> ComposeResult:
         """
         Build the vertical chrome plus a five-column horizontal body.
@@ -163,16 +191,39 @@ class EpicDetailScreen(Screen[None]):
         """
         Register as the WS listener and load the scoped story list.
         """
+        self._update_sub_title()
+        self.app.register_ws_listener(self)  # type: ignore[attr-defined]
+        await self.refresh_data()
+
+    def _update_sub_title(self) -> None:
+        """
+        Recompute the screen sub_title to reflect any active filter
+        and non-default sort mode.
+        """
         human_id = str(self._epic.get("human_id", ""))
         key = str(self._workspace.get("key", ""))
         if key and human_id:
-            self.sub_title = f"{key} - Epic {human_id}"
+            base = f"{key} - Epic {human_id}"
         elif human_id:
-            self.sub_title = f"Epic {human_id}"
+            base = f"Epic {human_id}"
         else:
-            self.sub_title = "Epic"
-        self.app.register_ws_listener(self)  # type: ignore[attr-defined]
-        await self.refresh_data()
+            base = "Epic"
+        parts: list[str] = [base]
+        if self._active_tag_filter:
+            tags = ", ".join(name for _id, name in self._active_tag_filter)
+            parts.append(f"filter: {tags}")
+        if self._sort_mode != SORT_MODE_ID_ASC:
+            parts.append(f"sort: {self._sort_mode_label()}")
+        self.sub_title = "  |  ".join(parts)
+
+    def _sort_mode_label(self) -> str:
+        """
+        Return a short human-readable label for the current sort
+        mode, used in the header chip.
+        """
+        if self._sort_mode == SORT_MODE_PRIORITY_DESC:
+            return "priority"
+        return "id"
 
     def on_unmount(self) -> None:
         """
@@ -183,6 +234,10 @@ class EpicDetailScreen(Screen[None]):
     async def refresh_data(self) -> None:
         """
         Fetch stories for this epic and repopulate the columns.
+
+        When :attr:`_active_tag_filter` is non-empty the tag filter
+        is applied client-side after the epic-scoped fetch so a
+        single round-trip pair still suffices.
         """
         client = self.app.client  # type: ignore[attr-defined]
         workspace_id = str(self._workspace.get("id", ""))
@@ -192,9 +247,52 @@ class EpicDetailScreen(Screen[None]):
         except ApiError as exc:
             self.notify(f"epic detail fetch failed: {exc}", severity="error")
             return
+        if self._active_tag_filter:
+            stories = await self._filter_stories_by_tags(
+                client,
+                workspace_id,
+                stories,
+                [name for _id, name in self._active_tag_filter],
+            )
         self._stories = stories
         self._render_columns()
         self._restore_focus()
+
+    async def _filter_stories_by_tags(
+        self,
+        client: Any,
+        workspace_id: str,
+        stories: list[dict[str, Any]],
+        tag_names: list[str],
+    ) -> list[dict[str, Any]]:
+        """
+        Return ``stories`` restricted to those that match any of
+        ``tag_names``.
+
+        Walks the workspace ``?tag=name`` endpoint once per filter
+        tag, builds a set of allowed story ids, and intersects with
+        the epic's stories. Stories with no id key are dropped.
+        """
+        allowed: set[str] = set()
+        for tag_name in tag_names:
+            cursor: str | None = None
+            while True:
+                params: dict[str, Any] = {"limit": 200, "tag": tag_name}
+                if cursor is not None:
+                    params["cursor"] = cursor
+                response = await client.get(
+                    f"/workspaces/{workspace_id}/stories",
+                    params=params,
+                )
+                body = response.json()
+                for story in body.get("items", []):
+                    story_id = str(story.get("id", ""))
+                    if story_id:
+                        allowed.add(story_id)
+                cursor = body.get("next_cursor")
+                if cursor is None:
+                    break
+        return [s for s in stories if str(s.get("id", "")) in allowed]
 
     async def _fetch_stories(
         self,
@@ -225,8 +323,9 @@ class EpicDetailScreen(Screen[None]):
 
     def _render_columns(self) -> None:
         """
-        Distribute stories into columns by state. Reuses
-        :class:`StoryCard` so the look matches the main board.
+        Distribute stories into columns by state, applying the active
+        sort mode within each column. Reuses :class:`StoryCard` so the
+        look matches the main board.
         """
         by_state: dict[str, list[dict[str, Any]]] = {
             state: [] for state, _ in COLUMN_STATES
@@ -237,7 +336,8 @@ class EpicDetailScreen(Screen[None]):
                 by_state[state].append(story)
         for state_key, _title in COLUMN_STATES:
             column = self.query_one(f"#epic-col-{state_key}", BoardColumn)
-            cards = [StoryCard(story) for story in by_state[state_key]]
+            ordered = sort_stories(by_state[state_key], self._sort_mode)
+            cards = [StoryCard(story) for story in ordered]
             column.set_cards(cards)
 
     def _restore_focus(self) -> None:
@@ -356,6 +456,64 @@ class EpicDetailScreen(Screen[None]):
             self.notify("move cancelled")
             return
         self.app.pop_screen()
+
+    async def action_open_tag_filter(self) -> None:
+        """
+        Open the tag-filter modal and apply the chosen filter via the
+        modal's dismiss callback.
+        """
+        client = self.app.client  # type: ignore[attr-defined]
+        workspace_id = str(self._workspace.get("id", ""))
+        try:
+            response = await client.get(f"/workspaces/{workspace_id}/tags")
+        except ApiError as exc:
+            self.notify(f"tag fetch failed: {exc}", severity="error")
+            return
+        tags = list(response.json().get("items", []))
+        initial_ids = {tag_id for tag_id, _ in self._active_tag_filter}
+
+        async def _on_dismiss(chosen: list[tuple[str, str]] | None) -> None:
+            if chosen is None:
+                return
+            self._active_tag_filter = list(chosen)
+            self._update_sub_title()
+            if not chosen:
+                self.notify("filter cleared")
+            else:
+                names = ", ".join(name for _id, name in chosen)
+                self.notify(f"filter: {names}")
+            await self.refresh_data()
+
+        await self.app.push_screen(
+            TagFilterPicker(tags=tags, initial_tag_ids=initial_ids),
+            _on_dismiss,
+        )
+
+    async def action_clear_tag_filter(self) -> None:
+        """
+        Clear the active tag filter and refresh the mini-board.
+        """
+        if not self._active_tag_filter:
+            self.notify("no filter active")
+            return
+        self._active_tag_filter = []
+        self._update_sub_title()
+        self.notify("filter cleared")
+        await self.refresh_data()
+
+    def action_cycle_sort(self) -> None:
+        """
+        Cycle through the supported sort modes.
+        """
+        try:
+            index = SORT_MODE_CYCLE.index(self._sort_mode)
+        except ValueError:
+            index = 0
+        self._sort_mode = SORT_MODE_CYCLE[(index + 1) % len(SORT_MODE_CYCLE)]
+        self._update_sub_title()
+        self._render_columns()
+        self._restore_focus()
+        self.notify(f"sort: {self._sort_mode_label()}")
 
     async def action_refresh_screen(self) -> None:
         """
