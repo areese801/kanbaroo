@@ -246,6 +246,61 @@ def test_story_move_transition(
     assert posted[0].headers["if-match"] == "1"
 
 
+def test_story_move_no_state_advances_one_step(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    ``kb story move KAN-1`` (no state arg) advances the story one step
+    along the natural progression. A backlog story ends up in ``todo``.
+    """
+    del config_dir
+    mock_api.json(
+        "GET",
+        "/stories/by-key/KAN-1",
+        body=_story_body(human_id="KAN-1", state="backlog"),
+        headers={"etag": "1"},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1",
+        body=_story_body(human_id="KAN-1", state="backlog"),
+        headers={"etag": "1"},
+    )
+    mock_api.json(
+        "POST",
+        "/stories/story-1/transition",
+        body=_story_body(human_id="KAN-1", state="todo", version=2),
+        headers={"etag": "2"},
+    )
+    result = runner.invoke(app, ["story", "move", "KAN-1"])
+    assert result.exit_code == 0, result.stderr
+    posted = [r for r in mock_api.requests if r.path == "/stories/story-1/transition"]
+    assert posted and posted[0].body == {"to_state": "todo"}
+    assert "moved" in result.stdout
+    assert "todo" in result.stdout
+
+
+def test_story_move_no_state_on_done_is_no_op(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    ``kb story move KAN-1`` on a ``done`` story exits 0 with a friendly
+    "already done" note and never hits the transition endpoint.
+    """
+    del config_dir
+    mock_api.json(
+        "GET",
+        "/stories/by-key/KAN-1",
+        body=_story_body(human_id="KAN-1", state="done"),
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(app, ["story", "move", "KAN-1"])
+    assert result.exit_code == 0, result.stderr
+    assert "already done" in result.stdout
+    posted = [r for r in mock_api.requests if r.path == "/stories/story-1/transition"]
+    assert posted == []
+
+
 def test_story_comment(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     """
     ``comment`` POSTs the body to the story's comments endpoint.

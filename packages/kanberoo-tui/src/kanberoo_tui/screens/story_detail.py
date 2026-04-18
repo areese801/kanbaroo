@@ -56,6 +56,7 @@ from textual.widgets import (
 
 from kanberoo_tui.client import ApiError, ApiRequestError
 from kanberoo_tui.editor import EditorRunner, edit_markdown
+from kanberoo_tui.screens.audit_feed import format_state_transition
 from kanberoo_tui.widgets.help_modal import KeybindingHelp
 from kanberoo_tui.widgets.link_picker import LinkPicker
 from kanberoo_tui.widgets.story_card import actor_badge
@@ -521,6 +522,9 @@ class StoryDetailScreen(Screen[None]):
             badge = _escape_markup(actor_badge(actor_type))
             actor_id = _escape_markup(str(event.get("actor_id", "?")))
             action = _escape_markup(str(event.get("action", "")))
+            transition = format_state_transition(event)
+            if transition is not None:
+                action = f"{action}  [bold]{_escape_markup(transition)}[/bold]"
             await body.mount(Static(f"{when}  {badge} {actor_id}  {action}"))
 
     async def action_show_help(self) -> None:

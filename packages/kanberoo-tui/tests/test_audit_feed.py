@@ -104,6 +104,61 @@ async def test_audit_feed_renders_mock_events_and_live_ws_append(
         await fake_ws.close()
 
 
+async def test_audit_feed_renders_state_transition_inline(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    ``state_changed`` rows include a ``<from> -> <to>`` segment in the
+    action column so the transition reads at a glance.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    audit_row = {
+        "id": "evt-001",
+        "occurred_at": "2026-04-18T01:00:00Z",
+        "actor_type": "human",
+        "actor_id": "adam",
+        "entity_type": "story",
+        "entity_id": "story-1",
+        "action": "state_changed",
+        "diff": {
+            "before": {"state": "backlog"},
+            "after": {"state": "todo"},
+        },
+    }
+    mock_api.json(
+        "GET",
+        "/audit",
+        body={"items": [audit_row], "next_cursor": None},
+    )
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.pause()
+        feed = app.screen
+        assert isinstance(feed, AuditFeedScreen)
+        table = feed.query_one("#audit-table", DataTable)
+        assert table.row_count == 1
+        # Action column (index 2) should contain the transition arrow.
+        rendered_action = str(table.get_row_at(0)[2])
+        assert "backlog" in rendered_action
+        assert "todo" in rendered_action
+        assert "\u2192" in rendered_action
+        await fake_ws.close()
+
+
 async def test_audit_feed_tolerates_404_and_still_shows_live_events(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):

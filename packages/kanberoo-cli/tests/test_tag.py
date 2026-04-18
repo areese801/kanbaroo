@@ -62,6 +62,59 @@ def test_tag_list(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     assert "bug" in result.stdout
 
 
+def test_tag_list_hides_soft_deleted_by_default(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    By default the listing hides soft-deleted tags and prints a hint
+    line when any exist so the operator knows to pass
+    ``--include-deleted``.
+    """
+    del config_dir
+    live = _tag_body(tag_id="tag-live", name="bug")
+    gone = _tag_body(tag_id="tag-gone", name="retired", color=None)
+    gone["deleted_at"] = "2026-04-18T00:00:00Z"
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/tags",
+        body={"items": [live, gone]},
+    )
+    result = runner.invoke(app, ["tag", "list", "--workspace", "KAN"])
+    assert result.exit_code == 0, result.stderr
+    assert "bug" in result.stdout
+    assert "retired" not in result.stdout
+    assert "1 soft-deleted tag" in result.stdout
+    assert "--include-deleted" in result.stdout
+
+
+def test_tag_list_include_deleted_flag(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    ``--include-deleted`` lists soft-deleted tags and suppresses the
+    "not shown" hint.
+    """
+    del config_dir
+    live = _tag_body(tag_id="tag-live", name="bug")
+    gone = _tag_body(tag_id="tag-gone", name="retired", color=None)
+    gone["deleted_at"] = "2026-04-18T00:00:00Z"
+    mock_api.json("GET", "/workspaces/by-key/KAN", body=_ws_body())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-kan/tags",
+        body={"items": [live, gone]},
+    )
+    result = runner.invoke(
+        app,
+        ["tag", "list", "--workspace", "KAN", "--include-deleted"],
+    )
+    assert result.exit_code == 0, result.stderr
+    assert "bug" in result.stdout
+    assert "retired" in result.stdout
+    assert "not shown" not in result.stdout
+
+
 def test_tag_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     """
     ``kb tag create`` POSTs the name and optional color.
