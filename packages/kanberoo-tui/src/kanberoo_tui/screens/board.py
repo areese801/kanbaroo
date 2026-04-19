@@ -308,9 +308,16 @@ class BoardScreen(Screen[None]):
     async def on_mount(self) -> None:
         """
         Register as the WS listener and load the board data.
+
+        Also records the workspace as the app's last-seen workspace
+        so the global ``E`` binding still resolves a target after the
+        user navigates on to audit or search.
         """
         self._update_sub_title()
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
+        record = getattr(self.app, "record_workspace_context", None)
+        if record is not None:
+            record(self._workspace)
         await self.refresh_data()
 
     def _update_sub_title(self) -> None:
@@ -487,7 +494,31 @@ class BoardScreen(Screen[None]):
 
     def _focused_card(self) -> StoryCard | None:
         """
-        Return the currently-focused card or ``None``.
+        Return the card the user wants to act on, or ``None``.
+
+        Used by action handlers that mutate the focused card (``>``,
+        ``m``, ``enter``). Textual focus is the source of truth so a
+        mouse click lands on the clicked card and subsequent keyboard
+        actions hit that card instead of the stale indexed one. Falls
+        back to the ``(_active_col, _active_row)`` indexed card when
+        nothing card-shaped holds focus. Syncing ``_active_col`` /
+        ``_active_row`` to the focused card keeps the h/j/k/l tracker
+        consistent so keyboard nav continues from the clicked card.
+        """
+        focused_card = self._card_for_focused_widget()
+        if focused_card is not None:
+            self._sync_active_indices(focused_card)
+            return focused_card
+        return self._indexed_card()
+
+    def _indexed_card(self) -> StoryCard | None:
+        """
+        Return the card at ``(_active_col, _active_row)``.
+
+        Used by navigation actions (``h``/``j``/``k``/``l``) that move
+        the tracker independently of Textual focus; calling
+        :meth:`_focused_card` from those actions would snap the tracker
+        back to whatever the user clicked last.
         """
         column = self._column_at(self._active_col)
         cards = column.cards
@@ -495,6 +526,32 @@ class BoardScreen(Screen[None]):
             return None
         self._active_row = max(0, min(self._active_row, len(cards) - 1))
         return cards[self._active_row]
+
+    def _card_for_focused_widget(self) -> StoryCard | None:
+        """
+        Walk the DOM upward from the focused widget until a
+        :class:`StoryCard` ancestor is found. Returns ``None`` if the
+        currently-focused widget does not live under a card.
+        """
+        node: Any | None = self.focused
+        while node is not None:
+            if isinstance(node, StoryCard):
+                return node
+            node = getattr(node, "parent", None)
+        return None
+
+    def _sync_active_indices(self, card: StoryCard) -> None:
+        """
+        Align ``_active_col`` and ``_active_row`` with ``card``'s
+        position so subsequent keyboard nav continues from the
+        mouse-selected card instead of snapping back to a stale index.
+        """
+        for col_index in range(len(COLUMN_STATES)):
+            cards = self._column_at(col_index).cards
+            if card in cards:
+                self._active_col = col_index
+                self._active_row = cards.index(card)
+                return
 
     def _next_non_empty_column(self, start: int, step: int) -> int | None:
         """
@@ -517,13 +574,17 @@ class BoardScreen(Screen[None]):
 
         Columns with no cards are skipped so a sparse board does not
         force multiple ``l`` presses to step over gaps. A no-op when
-        every column to the right is empty.
+        every column to the right is empty. Uses
+        :meth:`_indexed_card` so navigation moves the tracker
+        independently of whichever card currently holds Textual focus
+        (otherwise clicking a card in column X would pin column X to
+        the tracker and ``l`` would never leave it).
         """
         target = self._next_non_empty_column(self._active_col, 1)
         if target is None:
             return
         self._active_col = target
-        card = self._focused_card()
+        card = self._indexed_card()
         if card is not None:
             card.focus()
 
@@ -538,7 +599,7 @@ class BoardScreen(Screen[None]):
         if target is None:
             return
         self._active_col = target
-        card = self._focused_card()
+        card = self._indexed_card()
         if card is not None:
             card.focus()
 
@@ -692,10 +753,18 @@ class BoardScreen(Screen[None]):
         likely duplicate; the create POST runs from the modal's
         dismiss callback so the action method can return cleanly
         without requiring an active worker.
+
+        Any unexpected exception (editor crash, network glitch,
+        refresh failure) surfaces through ``notify`` so the user never
+        sees silent no-op after saving the editor buffer.
         """
-        edited = await edit_markdown(
-            self.app, NEW_STORY_TEMPLATE, runner=self._editor_runner
-        )
+        try:
+            edited = await edit_markdown(
+                self.app, NEW_STORY_TEMPLATE, runner=self._editor_runner
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.notify(f"editor failed: {exc}", severity="error")
+            return
         if edited is None:
             self.notify("new story aborted")
             return
@@ -732,6 +801,15 @@ class BoardScreen(Screen[None]):
     async def _post_new_story(self, title: str, description: str) -> None:
         """
         POST the create payload, notify, and refetch the board.
+
+        Catches every exception and surfaces it via ``notify`` so the
+        user always sees feedback after the editor closes; a silent
+        failure here was the root cause of the "saved vim, no card
+        appears" cage-delta report. On success we notify with the
+        server-assigned human id (falling back to the typed title when
+        the 201 body is missing one) and explicitly refetch so the
+        card shows up without waiting for the ``story.created`` WS
+        round-trip.
         """
         client = self.app.client  # type: ignore[attr-defined]
         workspace_id = str(self._workspace.get("id", ""))
@@ -739,12 +817,27 @@ class BoardScreen(Screen[None]):
         if description:
             payload["description"] = description
         try:
-            await client.post(f"/workspaces/{workspace_id}/stories", json=payload)
+            response = await client.post(
+                f"/workspaces/{workspace_id}/stories", json=payload
+            )
         except ApiError as exc:
             self.notify(f"new story failed: {exc}", severity="error")
             return
-        self.notify(f"created story '{title}'")
-        await self.refresh_data()
+        except Exception as exc:  # noqa: BLE001
+            self.notify(f"new story failed (unexpected): {exc}", severity="error")
+            return
+        human_id = title
+        try:
+            body = response.json()
+            if isinstance(body, dict) and body.get("human_id"):
+                human_id = str(body["human_id"])
+        except ValueError:
+            pass
+        self.notify(f"created story '{human_id}'")
+        try:
+            await self.refresh_data()
+        except Exception as exc:  # noqa: BLE001
+            self.notify(f"refresh failed: {exc}", severity="error")
 
     def action_back(self) -> None:
         """

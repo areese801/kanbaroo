@@ -95,11 +95,12 @@ class LinkPicker(ModalScreen[dict[str, Any] | None]):
         super().__init__()
         self._client = client
         self._source_story = source_story
+        self._resolved_target: dict[str, Any] | None = None
 
     def compose(self) -> ComposeResult:
         """
-        Lay out the centered panel: title, target input, link-type
-        options, hint footer.
+        Lay out the centered panel: title, target input, resolved-
+        target preview, link-type options, hint footer.
         """
         with Vertical():
             yield Static(
@@ -107,12 +108,16 @@ class LinkPicker(ModalScreen[dict[str, Any] | None]):
                 classes="picker-title",
             )
             yield Input(placeholder="target human id (e.g. KAN-7)", id="link-target")
+            yield Static("", id="link-target-resolved", classes="picker-hint")
             option_list: OptionList = OptionList(
                 *[Option(link, id=link) for link in LINK_TYPES],
                 id="link-type",
             )
             yield option_list
-            yield Static("ctrl+s to submit, esc to cancel", classes="picker-title")
+            yield Static(
+                "enter resolves target, ctrl+s submits, esc cancels",
+                classes="picker-title",
+            )
 
     def on_mount(self) -> None:
         """
@@ -146,31 +151,74 @@ class LinkPicker(ModalScreen[dict[str, Any] | None]):
         option_list = self.query_one("#link-type", OptionList)
         option_list.action_cursor_up()
 
+    async def on_input_submitted(self, message: Input.Submitted) -> None:
+        """
+        Resolve the human id into a story body when the user hits
+        enter in the input, and display the resolved title below so
+        the user can sanity-check before ``ctrl+s``.
+
+        A successful lookup caches ``_resolved_target`` so
+        :meth:`action_submit` can POST without re-resolving; a miss
+        clears the cache and shows ``not found`` so the user knows
+        to correct their input. The user should never be able to
+        POST a bogus linkage because submit checks the cache before
+        firing.
+        """
+        if message.input.id != "link-target":
+            return
+        ref = message.value.strip()
+        preview = self.query_one("#link-target-resolved", Static)
+        if not ref:
+            self._resolved_target = None
+            preview.update("")
+            return
+        try:
+            target = await self._resolve_target(ref)
+        except ApiError:
+            self._resolved_target = None
+            preview.update(f"[red]not found: {ref}[/red]")
+            return
+        self._resolved_target = target
+        human_id = str(target.get("human_id", ""))
+        title = str(target.get("title", ""))
+        escaped_title = title.replace("[", "\\[")
+        preview.update(f"[green]\u2192 {human_id}[/green] {escaped_title}")
+
     async def action_submit(self) -> None:
         """
-        Resolve the target human id and POST the linkage.
+        POST the linkage using the previously-resolved target.
+
+        The resolve step runs on :meth:`on_input_submitted` so the
+        user can sanity-check the target title before committing; if
+        nothing is cached yet we nudge the user to press enter in the
+        input first rather than silently looking up on submit.
         """
-        target_input = self.query_one("#link-target", Input)
-        target_ref = target_input.value.strip()
-        if not target_ref:
-            self.notify("type a target human id first", severity="warning")
-            return
         option_list = self.query_one("#link-type", OptionList)
         highlighted = option_list.highlighted
         if highlighted is None:
             self.notify("pick a link type with the arrow keys", severity="warning")
             return
+        if self._resolved_target is None:
+            target_input = self.query_one("#link-target", Input)
+            ref = target_input.value.strip()
+            if not ref:
+                self.notify("type a target human id first", severity="warning")
+                return
+            self.notify(
+                "press enter in the input to resolve the target first",
+                severity="warning",
+            )
+            return
         option = option_list.get_option_at_index(highlighted)
         link_type = str(option.id)
         try:
-            target_story = await self._resolve_target(target_ref)
             response = await self._client.post(
                 "/linkages",
                 json={
                     "source_type": "story",
                     "source_id": str(self._source_story.get("id", "")),
                     "target_type": "story",
-                    "target_id": str(target_story.get("id", "")),
+                    "target_id": str(self._resolved_target.get("id", "")),
                     "link_type": link_type,
                 },
             )

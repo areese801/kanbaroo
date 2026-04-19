@@ -13,18 +13,20 @@ from typing import Any
 
 import typer
 
-from kanberoo_cli.client import ApiError
+from kanberoo_cli.client import ApiClient, ApiError, ApiRequestError
 from kanberoo_cli.context import build_client, require_config
 from kanberoo_cli.rendering import (
     exit_on_api_error,
     print_json,
     print_table,
+    stderr_console,
     stdout_console,
 )
 from kanberoo_cli.resolvers import (
     require_effective_workspace,
     resolve_epic,
     resolve_workspace,
+    try_resolve_other,
 )
 from kanberoo_cli.similar import fetch_similar_entities, print_similar_entities
 
@@ -202,11 +204,20 @@ def show_epic(
 ) -> None:
     """
     Show a single epic by its human id or UUID.
+
+    A 404 from the epic lookup falls through to a story lookup with
+    the same ref; if that hits, the user gets a hint to run
+    ``kb story show`` instead of a bare "not found" message.
     """
     config = require_config()
     with build_client(config) as client:
         try:
             body = resolve_epic(client, ref)
+        except ApiRequestError as exc:
+            if exc.status_code == 404:
+                _suggest_alternative(client, ref, missing="epic", alternative="story")
+                raise typer.Exit(code=1) from exc
+            exit_on_api_error(exc)
         except ApiError as exc:
             exit_on_api_error(exc)
 
@@ -284,3 +295,29 @@ def reopen_epic(
     Reopen a closed epic.
     """
     _transition(ref, "reopen", as_json=as_json)
+
+
+def _suggest_alternative(
+    client: ApiClient,
+    ref: str,
+    *,
+    missing: str,
+    alternative: str,
+) -> None:
+    """
+    Print a Rich error explaining that ``ref`` is the other entity type.
+
+    Mirrors the helper in ``kanberoo_cli.commands.story`` so both
+    ``show`` commands offer the same "this looks like a story / epic"
+    hint when the user picks the wrong one.
+    """
+    stderr_console.print(
+        f"[red]Error (404 not_found):[/red] {missing} {ref!r} not found."
+    )
+    other = try_resolve_other(client, ref, other=alternative)
+    if other is None:
+        return
+    handle = other.get("human_id", ref)
+    stderr_console.print(
+        f"{handle} is a {alternative} - try `kb {alternative} show {handle}`."
+    )

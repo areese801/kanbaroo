@@ -200,6 +200,91 @@ def test_epic_show_by_key(mock_api: Any, config_dir: Path, runner: CliRunner) ->
     assert "KAN-4" in result.stdout
 
 
+def _story_body_for_epic(
+    *,
+    human_id: str = "KAN-1",
+    story_id: str = "story-1",
+) -> dict[str, Any]:
+    """
+    Minimal story body the epic-show-suggests-story test probes with.
+    """
+    return {
+        "id": story_id,
+        "workspace_id": "ws-kan",
+        "epic_id": None,
+        "human_id": human_id,
+        "title": f"story {human_id}",
+        "description": None,
+        "priority": "none",
+        "state": "backlog",
+        "state_actor_type": None,
+        "state_actor_id": None,
+        "branch_name": None,
+        "commit_sha": None,
+        "pr_url": None,
+        "created_at": "2026-04-18T00:00:00Z",
+        "updated_at": "2026-04-18T00:00:00Z",
+        "deleted_at": None,
+        "version": 1,
+    }
+
+
+def test_epic_show_suggests_story_when_ref_is_a_story(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    ``kb epic show KAN-1`` where KAN-1 is a story prints a 404 and a
+    hint pointing the user at ``kb story show KAN-1``.
+    """
+    del config_dir
+    mock_api.error(
+        "GET",
+        "/epics/by-key/KAN-1",
+        status_code=404,
+        code="not_found",
+        message="epic not found",
+    )
+    mock_api.json(
+        "GET",
+        "/stories/by-key/KAN-1",
+        body=_story_body_for_epic(),
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(app, ["epic", "show", "KAN-1"])
+    assert result.exit_code == 1
+    assert "404" in result.stderr
+    assert "KAN-1 is a story" in result.stderr
+    assert "kb story show KAN-1" in result.stderr
+
+
+def test_epic_show_not_found_when_ref_is_not_a_story_either(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    When neither the epic nor the story lookup hits, the CLI falls back
+    to a plain not-found message (no hint row).
+    """
+    del config_dir
+    mock_api.error(
+        "GET",
+        "/epics/by-key/KAN-99",
+        status_code=404,
+        code="not_found",
+        message="epic not found",
+    )
+    mock_api.error(
+        "GET",
+        "/stories/by-key/KAN-99",
+        status_code=404,
+        code="not_found",
+        message="story not found",
+    )
+    result = runner.invoke(app, ["epic", "show", "KAN-99"])
+    assert result.exit_code == 1
+    assert "404" in result.stderr
+    assert "is a story" not in result.stderr
+
+
 def test_epic_close(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:
     """
     ``close`` fetches the current ETag and POSTs with If-Match set.

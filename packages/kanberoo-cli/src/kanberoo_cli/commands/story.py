@@ -22,12 +22,13 @@ from typing import Any
 
 import typer
 
-from kanberoo_cli.client import ApiClient, ApiError
+from kanberoo_cli.client import ApiClient, ApiError, ApiRequestError
 from kanberoo_cli.context import build_client, require_config
 from kanberoo_cli.rendering import (
     exit_on_api_error,
     print_json,
     print_table,
+    stderr_console,
     stdout_console,
 )
 from kanberoo_cli.resolvers import (
@@ -35,6 +36,7 @@ from kanberoo_cli.resolvers import (
     resolve_epic,
     resolve_story,
     resolve_workspace,
+    try_resolve_other,
 )
 from kanberoo_cli.similar import fetch_similar_entities, print_similar_entities
 
@@ -267,13 +269,23 @@ def show_story(
 ) -> None:
     """
     Show a single story.
+
+    A 404 from the story lookup falls through to an epic lookup with
+    the same ref; if that hits, the user gets a hint to run
+    ``kb epic show`` instead of a bare "not found" message.
     """
     config = require_config()
     with build_client(config) as client:
         try:
             body = resolve_story(client, ref)
+        except ApiRequestError as exc:
+            if exc.status_code == 404:
+                _suggest_alternative(client, ref, missing="story", alternative="epic")
+                raise typer.Exit(code=1) from exc
+            exit_on_api_error(exc)
         except ApiError as exc:
             exit_on_api_error(exc)
+        epic_label = _fetch_epic_label(client, body.get("epic_id"))
 
     if as_json:
         print_json(body)
@@ -285,6 +297,7 @@ def show_story(
             ["title", body["title"]],
             ["state", body["state"]],
             ["priority", body["priority"]],
+            ["epic", epic_label],
             ["epic_id", body["epic_id"] or ""],
             ["description", body["description"] or ""],
             ["id", body["id"]],
@@ -292,6 +305,56 @@ def show_story(
         ],
         title=f"story {body['human_id']}",
     )
+
+
+def _suggest_alternative(
+    client: ApiClient,
+    ref: str,
+    *,
+    missing: str,
+    alternative: str,
+) -> None:
+    """
+    Print a Rich error explaining that ``ref`` is the other entity type.
+
+    ``missing`` is the entity the user asked for (``"story"`` or
+    ``"epic"``). ``alternative`` is the kind of entity we probe with
+    the same ref. When the probe also misses we fall back to the plain
+    not-found message so the user still gets a clear signal.
+    """
+    stderr_console.print(
+        f"[red]Error (404 not_found):[/red] {missing} {ref!r} not found."
+    )
+    other = try_resolve_other(client, ref, other=alternative)
+    if other is None:
+        return
+    handle = other.get("human_id", ref)
+    stderr_console.print(
+        f"{handle} is an {alternative} - try `kb {alternative} show {handle}`."
+    )
+
+
+def _fetch_epic_label(client: ApiClient, epic_id: str | None) -> str:
+    """
+    Return a human-readable label for the story's epic, or ``""``.
+
+    Fetches ``GET /epics/{id}`` when ``epic_id`` is set and returns
+    ``"{human_id} / {title}"``. Any failure (404, transport) falls back
+    to an empty string so the ``epic_id`` row below still shows the
+    UUID without the extra context and the CLI never crashes on a race.
+    """
+    if not epic_id:
+        return ""
+    try:
+        response = client.get(f"/epics/{epic_id}")
+    except ApiError:
+        return ""
+    epic = response.json()
+    human_id = str(epic.get("human_id", ""))
+    title = str(epic.get("title", ""))
+    if human_id and title:
+        return f"{human_id} / {title}"
+    return human_id or title
 
 
 def _launch_editor(initial_text: str) -> str:

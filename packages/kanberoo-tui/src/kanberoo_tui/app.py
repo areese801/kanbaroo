@@ -93,6 +93,7 @@ class KanberooTuiApp(App[None]):
         Binding("W", "goto_workspaces", "Workspaces", priority=True),
         Binding("E", "goto_epics", "Epics", priority=True),
         Binding("A", "goto_audit", "Audit", priority=True),
+        Binding("slash", "open_search", "Search", priority=True),
     ]
 
     CSS: ClassVar[str] = """
@@ -123,6 +124,11 @@ class KanberooTuiApp(App[None]):
         self._client: AsyncApiClient | None = None
         self._ws_task: asyncio.Task[None] | None = None
         self._ws_listeners: list[Any] = []
+        # Last workspace context observed from any workspace-scoped
+        # screen. Used as a fallback for app-level global navigation
+        # (``E`` especially) when the current top-of-stack screen has
+        # no workspace dict of its own (audit feed, search).
+        self._last_workspace: dict[str, Any] | None = None
 
     @property
     def editor_runner(self) -> EditorRunner | None:
@@ -273,6 +279,29 @@ class KanberooTuiApp(App[None]):
         while len(self.screen_stack) > 2:
             await self.pop_screen()
 
+    def record_workspace_context(self, workspace: dict[str, Any]) -> None:
+        """
+        Remember ``workspace`` as the most recent workspace the user
+        had in context.
+
+        Board, epic list, and epic detail screens call this on mount
+        so the app-level ``E`` binding still resolves a target when
+        the top-of-stack screen (audit feed, search, workspace list)
+        carries no workspace dict of its own.
+        """
+        self._last_workspace = dict(workspace)
+
+    @property
+    def last_workspace(self) -> dict[str, Any] | None:
+        """
+        Return the most recently observed workspace, if any. Exposed
+        for tests and for the ``E`` fallback in
+        :meth:`_effective_workspace`.
+        """
+        if self._last_workspace is None:
+            return None
+        return dict(self._last_workspace)
+
     async def _effective_workspace(self) -> dict[str, Any] | None:
         """
         Return the workspace implied by the current screen stack.
@@ -280,8 +309,11 @@ class KanberooTuiApp(App[None]):
         Walks the stack deepest-first looking for a screen that exposes
         a ``current_workspace`` dict; falls back to a REST fetch for a
         screen that only knows a ``current_workspace_id`` (story
-        detail). Returns ``None`` when nothing in the stack carries
-        workspace context.
+        detail); finally falls back to :attr:`last_workspace` so
+        screens with no workspace context (audit feed, search) can
+        still resolve a target for app-level navigation. Returns
+        ``None`` only when nothing in the stack or the last-tracked
+        cache carries workspace context.
         """
         for screen in reversed(list(self.screen_stack)):
             ws = getattr(screen, "current_workspace", None)
@@ -295,6 +327,8 @@ class KanberooTuiApp(App[None]):
                 except Exception:  # noqa: BLE001
                     return None
                 return dict(response.json())
+        if self._last_workspace is not None:
+            return dict(self._last_workspace)
         return None
 
     async def action_goto_workspaces(self) -> None:
@@ -309,8 +343,11 @@ class KanberooTuiApp(App[None]):
 
         On the workspace list itself, defer to the screen's own
         ``open_epic_list`` action so the highlighted row still wins
-        (today's behavior). Otherwise reset the stack and push
-        :class:`EpicListScreen` for the workspace in context.
+        (today's behavior). Otherwise resolve the workspace from the
+        stack (or :attr:`last_workspace`) and push
+        :class:`EpicListScreen`. When neither path yields a workspace
+        (audit feed opened before the user ever visited one), flash a
+        hint instead of silently no-opping.
         """
         top = self.screen
         if isinstance(top, WorkspaceListScreen):
@@ -318,6 +355,7 @@ class KanberooTuiApp(App[None]):
             return
         workspace = await self._effective_workspace()
         if workspace is None:
+            top.notify("open a workspace first", severity="warning")
             return
         await self._reset_to_workspace_list()
         await self.push_screen(EpicListScreen(workspace))
@@ -328,6 +366,19 @@ class KanberooTuiApp(App[None]):
         """
         await self._reset_to_workspace_list()
         await self.push_screen(AuditFeedScreen())
+
+    async def action_open_search(self) -> None:
+        """
+        Push the global fuzzy-search overlay from any screen.
+
+        Search is available workspace-wide, so the binding lives on
+        the app with ``priority=True``; screen-level ``slash``
+        bindings still exist for historical clarity but are shadowed
+        by this one.
+        """
+        if isinstance(self.screen, SearchScreen):
+            return
+        await self.push_screen(SearchScreen())
 
 
 def main() -> None:

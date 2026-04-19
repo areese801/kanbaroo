@@ -147,6 +147,151 @@ def test_story_show_uses_by_key(
     assert "KAN-1" in result.stdout
 
 
+def _epic_body_for_story(
+    *,
+    human_id: str = "KAN-9",
+    epic_id: str = "epic-9",
+    title: str = "Cage delta polish",
+) -> dict[str, Any]:
+    """
+    Minimal epic body the story-show test uses to resolve ``epic_id``.
+    """
+    return {
+        "id": epic_id,
+        "workspace_id": "ws-kan",
+        "human_id": human_id,
+        "title": title,
+        "description": None,
+        "state": "open",
+        "created_at": "2026-04-18T00:00:00Z",
+        "updated_at": "2026-04-18T00:00:00Z",
+        "deleted_at": None,
+        "version": 1,
+    }
+
+
+def test_story_show_includes_epic_human_id(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    When the story has an ``epic_id`` the show output renders the
+    epic's human id and title, not just the UUID.
+    """
+    del config_dir
+    story = _story_body(human_id="KAN-1")
+    story["epic_id"] = "epic-9"
+    mock_api.json("GET", "/stories/by-key/KAN-1", body=story, headers={"etag": "1"})
+    mock_api.json(
+        "GET",
+        "/epics/epic-9",
+        body=_epic_body_for_story(),
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(app, ["story", "show", "KAN-1"])
+    assert result.exit_code == 0, result.stderr
+    assert "KAN-9" in result.stdout
+    assert "Cage delta polish" in result.stdout
+
+
+def test_story_show_epic_fetch_failure_falls_back_to_uuid(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    A failed epic lookup does not blank the screen: the ``epic`` row
+    renders empty and the ``epic_id`` row still shows the UUID.
+    """
+    del config_dir
+    story = _story_body(human_id="KAN-1")
+    story["epic_id"] = "epic-missing"
+    mock_api.json("GET", "/stories/by-key/KAN-1", body=story, headers={"etag": "1"})
+    mock_api.error(
+        "GET",
+        "/epics/epic-missing",
+        status_code=404,
+        code="not_found",
+        message="epic gone",
+    )
+    result = runner.invoke(app, ["story", "show", "KAN-1"])
+    assert result.exit_code == 0, result.stderr
+    assert "epic-missing" in result.stdout
+
+
+def test_story_show_without_epic_renders_dash(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    A story with no ``epic_id`` renders an empty epic row and does not
+    attempt the epic lookup.
+    """
+    del config_dir
+    mock_api.json(
+        "GET",
+        "/stories/by-key/KAN-1",
+        body=_story_body(human_id="KAN-1"),
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(app, ["story", "show", "KAN-1"])
+    assert result.exit_code == 0, result.stderr
+    epic_reqs = [r for r in mock_api.requests if r.path.startswith("/epics/")]
+    assert epic_reqs == []
+
+
+def test_story_show_suggests_epic_when_ref_is_an_epic(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    ``kb story show KAN-9`` where KAN-9 is an epic prints a 404 and a
+    hint pointing the user at ``kb epic show KAN-9``.
+    """
+    del config_dir
+    mock_api.error(
+        "GET",
+        "/stories/by-key/KAN-9",
+        status_code=404,
+        code="not_found",
+        message="story not found",
+    )
+    mock_api.json(
+        "GET",
+        "/epics/by-key/KAN-9",
+        body=_epic_body_for_story(human_id="KAN-9"),
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(app, ["story", "show", "KAN-9"])
+    assert result.exit_code == 1
+    assert "404" in result.stderr
+    assert "KAN-9 is an epic" in result.stderr
+    assert "kb epic show KAN-9" in result.stderr
+
+
+def test_story_show_not_found_when_ref_is_not_an_epic_either(
+    mock_api: Any, config_dir: Path, runner: CliRunner
+) -> None:
+    """
+    When neither the story nor the epic lookup hits, the CLI falls back
+    to a plain not-found message (no hint row).
+    """
+    del config_dir
+    mock_api.error(
+        "GET",
+        "/stories/by-key/KAN-99",
+        status_code=404,
+        code="not_found",
+        message="story not found",
+    )
+    mock_api.error(
+        "GET",
+        "/epics/by-key/KAN-99",
+        status_code=404,
+        code="not_found",
+        message="epic not found",
+    )
+    result = runner.invoke(app, ["story", "show", "KAN-99"])
+    assert result.exit_code == 1
+    assert "404" in result.stderr
+    assert "is an epic" not in result.stderr
+
+
 def test_story_edit_no_change_skips_patch(
     mock_api: Any,
     config_dir: Path,

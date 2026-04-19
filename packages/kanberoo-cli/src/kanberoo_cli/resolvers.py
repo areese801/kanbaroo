@@ -161,3 +161,25 @@ def resolve_epic(client: ApiClient, ref: str) -> dict[str, Any]:
         response = client.get(f"/epics/{ref}")
     body: dict[str, Any] = response.json()
     return body
+
+
+def try_resolve_other(
+    client: ApiClient,
+    ref: str,
+    *,
+    other: str,
+) -> dict[str, Any] | None:
+    """
+    Attempt to resolve ``ref`` as the other entity kind and return it.
+
+    ``other`` is either ``"story"`` or ``"epic"``. Used by ``kb story
+    show`` and ``kb epic show`` to turn a 404 into a helpful "this
+    looks like the other kind of entity" hint. Returns ``None`` when
+    the other lookup also misses so callers fall back to the plain
+    not-found message.
+    """
+    resolver = resolve_story if other == "story" else resolve_epic
+    try:
+        return resolver(client, ref)
+    except ApiRequestError:
+        return None
