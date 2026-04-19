@@ -170,10 +170,34 @@ Services call `publish_event(...)` after a successful mutation, within the same 
 
 ## Release Workflow
 
-- Always merge to `main` via PR before publishing to PyPI.
-- Never publish to PyPI from an unmerged branch.
-- Each package has its own version in its own `pyproject.toml`.
-- The top-level meta-package version tracks the overall release.
+### Publishing to PyPI
+
+All six packages are published together from a single `make publish` at the repo root. The Makefile drives `uv build --all-packages` into `dist/`, then `uv publish` uploads everything, then a `v<version>` git tag is pushed.
+
+```bash
+git checkout main && git pull
+source set_creds.sh            # exports UV_PUBLISH_TOKEN
+make publish                   # builds, uploads, tags
+```
+
+- `set_creds.sh` sits at the repo root and is gitignored via the `set_creds*.sh` pattern. It exports `UV_PUBLISH_TOKEN` before `make publish` runs `uv publish`. Do not commit it or quote it in chat.
+- Always merge to `main` via PR before publishing. Never publish from an unmerged branch (the `tag` step pushes against the current `HEAD`).
+- Each package has its own version in its own `pyproject.toml`. The top-level meta-package version tracks the overall release and is what `make tag` reads.
+- The initial PyPI release was `0.1.0` on 2026-04-19 and covers `kanberoo`, `kanberoo-core`, `kanberoo-api`, `kanberoo-cli`, `kanberoo-tui`, `kanberoo-mcp`. `kanberoo-web` is reserved at `0.0.1` as a placeholder for phase 2.
+
+### Per-package READMEs are required
+
+Every sub-package (`packages/kanberoo-*`) MUST have its own `README.md` next to its `pyproject.toml`, and the `pyproject.toml` `readme` field MUST point at that local file (`readme = "README.md"`).
+
+Do NOT use `readme = "../../README.md"` to reference the root README: `uv build --all-packages` builds each sub-package's sdist first and then the wheel from the sdist, and the sdist does not include files from the parent directory. The wheel build fails with `OSError: Readme file does not exist: ../../README.md`. This is a build-system constraint, not a policy choice.
+
+### Local install for Claude Desktop / other end users
+
+```bash
+pipx install --include-deps 'kanberoo[all]'
+```
+
+`--include-deps` is load-bearing: without it, pipx only exposes the meta-package's apps (none), so `kb`, `kanberoo-mcp`, `kanberoo-tui`, `kanberoo-api`, and `kanberoo` all stay hidden in the isolated venv.
 
 ## Versioning
 
