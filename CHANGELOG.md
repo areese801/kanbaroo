@@ -4,6 +4,17 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added
+- `kanberoo-web` placeholder package reserved on PyPI for the future phase 2 web UI. Empty `src/kanberoo_web/` body, version `0.0.1` to signal "not released yet". Gets built and uploaded by the next `make publish` alongside the other packages.
+
+## [0.1.0] - 2026-04-19
+
+Initial PyPI release. Everything listed below shipped in this version. All six packages (`kanberoo`, `kanberoo-core`, `kanberoo-api`, `kanberoo-cli`, `kanberoo-tui`, `kanberoo-mcp`) uploaded to PyPI simultaneously with a `v0.1.0` git tag.
+
+### Added (publishing toolchain)
+- `Makefile` at the repo root with `build`, `publish`, `tag`, `lint`, `format`, `test`, `clean`, `sync` targets. `build` uses `uv build --all-packages`; `publish` uses `uv publish` with `UV_PUBLISH_TOKEN` sourced from `set_creds.sh` (gitignored).
+- Per-package `README.md` for each sub-package (`kanberoo-core`, `-api`, `-cli`, `-tui`, `-mcp`). Sub-package `pyproject.toml` `readme` fields now point at a local `README.md` instead of `../../README.md` (the old path broke `uv build --all-packages` because the sub-package sdists could not include a file from the parent directory).
+
 ### Fixed (cage delta)
 - `kb story show KAN-N` on a ref that resolves to an epic now prints `KAN-N is an epic - try \`kb epic show KAN-N\`` under the 404 instead of a bare "story not found"; mirror in `kb epic show` points users at `kb story show`. Vanilla misses (neither story nor epic) still surface the plain not-found message.
 - TUI `QuitConfirmModal` hint renders as `[Y]es  /  [N]o` with literal square brackets (previously Rich parsed `[y]` and `[n]` as unknown markup tags and ate the letters, leaving `es  /  o`). The hint Static now escapes the opening bracket for Rich so the label stays legible.
