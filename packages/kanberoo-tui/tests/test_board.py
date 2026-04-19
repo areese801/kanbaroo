@@ -437,6 +437,88 @@ async def test_board_quick_advance_on_done_is_noop(
         await fake_ws.close()
 
 
+async def test_board_quick_advance_uses_focused_card_not_indexed(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    When the focused card differs from the one tracked by the
+    keyboard cursor (mouse click path), ``>`` transitions the focused
+    card instead of the indexed one.
+    """
+    initial = [
+        _story("story-1", "KAN-1", state="backlog", version=1),
+        _story("story-2", "KAN-2", state="backlog", version=1),
+    ]
+    after = [
+        _story("story-1", "KAN-1", state="backlog", version=1),
+        _story("story-2", "KAN-2", state="todo", version=2),
+    ]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": initial, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": initial, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": after, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-2",
+        body=initial[1],
+        headers={"ETag": "1"},
+    )
+    mock_api.json(
+        "POST",
+        "/stories/story-2/transition",
+        body=after[1],
+        status_code=200,
+    )
+
+    app = await _open_board(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        board = app.screen
+        assert isinstance(board, BoardScreen)
+        # Default focus lands on KAN-1 (the screen's indexed tracker).
+        focused = app.focused
+        assert isinstance(focused, StoryCard)
+        assert focused.story["human_id"] == "KAN-1"
+        assert board._active_row == 0
+
+        # Simulate a mouse click focusing KAN-2 directly (without going
+        # through keyboard navigation).
+        kan_2_card = next(
+            c for c in board.query(StoryCard) if c.story["human_id"] == "KAN-2"
+        )
+        kan_2_card.focus()
+        await pilot.pause()
+
+        # Press `>` and assert the transition POST targets story-2.
+        await pilot.press("greater_than_sign")
+        await pilot.pause()
+        await pilot.pause()
+        transitions = [
+            r
+            for r in mock_api.requests
+            if r.path.startswith("/stories/")
+            and r.path.endswith("/transition")
+            and r.method == "POST"
+        ]
+        assert len(transitions) == 1
+        assert transitions[0].path == "/stories/story-2/transition"
+        await fake_ws.close()
+
+
 async def test_board_q_pops_with_focused_card(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):

@@ -114,6 +114,10 @@ class EpicListScreen(Screen[None]):
     async def on_mount(self) -> None:
         """
         Register the WS listener, build the table, kick off the fetch.
+
+        Also records the workspace as the app's last-seen workspace
+        so the global ``E`` binding still resolves a target after the
+        user navigates away to audit or search.
         """
         key = str(self._workspace.get("key", ""))
         self.sub_title = f"{key} - Epics" if key else "Epics"
@@ -124,6 +128,9 @@ class EpicListScreen(Screen[None]):
         table.add_columns("key", "title", "state", "stories", "last updated")
         await body.mount(table)
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
+        record = getattr(self.app, "record_workspace_context", None)
+        if record is not None:
+            record(self._workspace)
         await self.refresh_data()
         table.focus()
 

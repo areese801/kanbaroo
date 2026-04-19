@@ -70,6 +70,43 @@ MOVE_KEY_TO_STATE: dict[str, str] = {
     "d": "done",
 }
 
+
+class CommentWidget(Static):
+    """
+    Focusable :class:`Static` wrapping one comment body.
+
+    The screen-level ``R`` binding needs to know which comment the
+    cursor is on so it can post a reply against the right
+    ``parent_id``; making the widget focusable is cheaper than
+    maintaining a parallel cursor index. ``comment`` is the raw REST
+    body for the wrapped comment (the screen reads ``id`` and
+    ``parent_id`` off it).
+    """
+
+    can_focus = True
+
+    def __init__(
+        self,
+        comment: dict[str, Any],
+        markup: str,
+        *,
+        classes: str | None = None,
+    ) -> None:
+        """
+        Build a focusable comment bubble around ``comment`` with
+        ``markup`` as the pre-rendered body.
+        """
+        super().__init__(markup, classes=classes)
+        self._comment = comment
+
+    @property
+    def comment(self) -> dict[str, Any]:
+        """
+        Return the underlying comment dict.
+        """
+        return self._comment
+
+
 TAB_IDS: list[str] = [
     "tab-description",
     "tab-comments",
@@ -81,6 +118,7 @@ TAB_IDS: list[str] = [
 HELP_ROWS: list[tuple[str, str]] = [
     ("e", "edit description in $EDITOR"),
     ("c", "add comment in $EDITOR"),
+    ("R", "reply to focused comment (Comments tab)"),
     ("m then b/t/p/r/d", "move the story to a new state"),
     ("t", "toggle tags"),
     ("L", "link to another story"),
@@ -133,6 +171,7 @@ class StoryDetailScreen(Screen[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("e", "edit_description", "Edit"),
         Binding("c", "add_comment", "Comment"),
+        Binding("R", "reply_to_comment", "Reply"),
         Binding("m", "enter_move_mode", "Move"),
         Binding("t", "toggle_tags", "Tags"),
         Binding("L", "open_link_picker", "Link"),
@@ -246,15 +285,15 @@ class StoryDetailScreen(Screen[None]):
         yield Static(id="story-header", classes="story-header")
         yield Static(id="story-chips", classes="story-chips")
         with TabbedContent(id="story-tabs"):
-            with TabPane("Description", id="tab-description"):
+            with TabPane("1 Description", id="tab-description"):
                 yield Markdown(id="story-description")
-            with TabPane("Comments", id="tab-comments"):
+            with TabPane("2 Comments", id="tab-comments"):
                 yield VerticalScroll(id="comments-body")
-            with TabPane("Linkages", id="tab-linkages"):
+            with TabPane("3 Linkages", id="tab-linkages"):
                 yield VerticalScroll(id="linkages-body")
-            with TabPane("Tags", id="tab-tags"):
+            with TabPane("4 Tags", id="tab-tags"):
                 yield Static(id="tags-body")
-            with TabPane("Audit", id="tab-audit"):
+            with TabPane("5 Audit", id="tab-audit"):
                 yield VerticalScroll(id="audit-body")
         yield Footer()
 
@@ -419,7 +458,9 @@ class StoryDetailScreen(Screen[None]):
 
         Comments render newest-last per the spec and indent replies
         once; the server enforces one-level threading, so we never
-        need deeper nesting.
+        need deeper nesting. Each comment is wrapped in a focusable
+        :class:`CommentWidget` so the ``R`` binding can tell which
+        comment the user is replying to.
         """
         body = self.query_one("#comments-body", VerticalScroll)
         for child in list(body.children):
@@ -436,10 +477,17 @@ class StoryDetailScreen(Screen[None]):
             if parent_id:
                 replies_by_parent.setdefault(str(parent_id), []).append(comment)
         for comment in parents:
-            await body.mount(Static(_format_comment(comment), classes="comment"))
+            await body.mount(
+                CommentWidget(
+                    comment,
+                    _format_comment(comment),
+                    classes="comment",
+                )
+            )
             for reply in replies_by_parent.get(str(comment.get("id", "")), []):
                 await body.mount(
-                    Static(
+                    CommentWidget(
+                        reply,
                         _format_comment(reply, is_reply=True),
                         classes="comment-reply",
                     )
@@ -454,6 +502,14 @@ class StoryDetailScreen(Screen[None]):
         and group within each direction by link_type. The endpoint
         already deduplicates the mirror pair for blocks/duplicates, so
         each pair appears exactly once.
+
+        Each linkage resolves its far end (story or epic, based on
+        ``target_type``/``source_type``) into a ``human_id "title"``
+        label so the tab is legible. That is one extra GET per
+        linkage row; at single-user scale the amortised cost is
+        negligible. If the linkage count grows enough that render
+        time shows up in a profile, batch the fetches by
+        ``(type, id)``.
         """
         body = self.query_one("#linkages-body", VerticalScroll)
         for child in list(body.children):
@@ -474,15 +530,49 @@ class StoryDetailScreen(Screen[None]):
             for link_type, rows in sorted(outgoing.items()):
                 await body.mount(Static(f"  {_escape_markup(link_type)}:"))
                 for row in rows:
-                    target = _escape_markup(str(row.get("target_id", "")))
-                    await body.mount(Static(f"    \u2192 {target}"))
+                    label = await self._linkage_label(
+                        str(row.get("target_type", "story")),
+                        str(row.get("target_id", "")),
+                    )
+                    await body.mount(Static(f"    \u2192 {label}"))
         if incoming:
             await body.mount(Static("[bold]incoming[/bold]"))
             for link_type, rows in sorted(incoming.items()):
                 await body.mount(Static(f"  {_escape_markup(link_type)}:"))
                 for row in rows:
-                    source = _escape_markup(str(row.get("source_id", "")))
-                    await body.mount(Static(f"    \u2190 {source}"))
+                    label = await self._linkage_label(
+                        str(row.get("source_type", "story")),
+                        str(row.get("source_id", "")),
+                    )
+                    await body.mount(Static(f"    \u2190 {label}"))
+
+    async def _linkage_label(self, entity_type: str, entity_id: str) -> str:
+        """
+        Return ``{human_id} "{title}"`` for the linkage endpoint, or
+        the raw UUID with a ``(not accessible)`` suffix when the fetch
+        fails (deleted, 404, transport error).
+
+        ``entity_type`` is ``story`` or ``epic`` and picks the REST
+        path segment. Anything else falls back to the story path so
+        an unexpected value never breaks the render.
+        """
+        if not entity_id:
+            return ""
+        segment = "epics" if entity_type == "epic" else "stories"
+        try:
+            response = await self.app.client.get(  # type: ignore[attr-defined]
+                f"/{segment}/{entity_id}"
+            )
+        except ApiError:
+            return f"{_escape_markup(entity_id)} (not accessible)"
+        body = response.json()
+        human_id = _escape_markup(str(body.get("human_id", "")))
+        title = _escape_markup(str(body.get("title", "")))
+        if human_id and title:
+            return f'{human_id} "{title}"'
+        if human_id:
+            return human_id
+        return _escape_markup(entity_id)
 
     def _render_tags(self) -> None:
         """
@@ -631,6 +721,56 @@ class StoryDetailScreen(Screen[None]):
             return
         self.notify("comment posted")
         await self.refresh_data()
+
+    async def action_reply_to_comment(self) -> None:
+        """
+        Reply to the focused comment on the Comments tab.
+
+        Walks the focused-widget ancestry to find the enclosing
+        :class:`CommentWidget` so the action fires against whichever
+        comment currently has focus. A reply to a reply is rejected
+        per spec section 3.1 (one-level threading); no comment in
+        focus flashes a hint and skips the editor round-trip. On
+        success the screen refetches so the new reply appears without
+        waiting for the ``story.commented`` WS event.
+        """
+        comment_widget = self._focused_comment_widget()
+        if comment_widget is None:
+            self.notify("focus a comment to reply", severity="warning")
+            return
+        comment = comment_widget.comment
+        if comment.get("parent_id"):
+            self.notify("cannot reply to a reply", severity="warning")
+            return
+        edited = await edit_markdown(self.app, "", runner=self._editor_runner)
+        if edited is None or not edited.strip():
+            self.notify("reply aborted")
+            return
+        client = self.app.client  # type: ignore[attr-defined]
+        story_id = str(self._story.get("id", ""))
+        parent_id = str(comment.get("id", ""))
+        try:
+            await client.post(
+                f"/stories/{story_id}/comments",
+                json={"body": edited, "parent_id": parent_id},
+            )
+        except ApiError as exc:
+            self.notify(f"reply failed: {exc}", severity="error")
+            return
+        self.notify("reply posted")
+        await self.refresh_data()
+
+    def _focused_comment_widget(self) -> CommentWidget | None:
+        """
+        Return the :class:`CommentWidget` the focus currently sits on
+        (or inside), or ``None`` if nothing comment-shaped has focus.
+        """
+        node: Any | None = self.focused
+        while node is not None:
+            if isinstance(node, CommentWidget):
+                return node
+            node = getattr(node, "parent", None)
+        return None
 
     def action_enter_move_mode(self) -> None:
         """

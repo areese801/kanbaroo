@@ -186,3 +186,105 @@ async def test_new_story_aborts_on_unchanged_template(
         ]
         assert creates == []
         await fake_ws.close()
+
+
+async def test_new_story_aborts_when_placeholder_title_unchanged(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
+):
+    """
+    Editing the template's body but leaving the ``# Title (replace
+    this line)`` line in place aborts the create rather than posting
+    a story with the placeholder title. Regression guard for the
+    cage-delta "editor saves, nothing happens" path.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    # Edit adds a line but leaves the title placeholder in place; the
+    # board should notify and skip the POST.
+    fake_editor.content_to_write = (
+        "# Title (replace this line)\n\n# Description below\n\nnotes\n"
+    )
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+        editor_runner=fake_editor,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.pause()
+        creates = [
+            r
+            for r in mock_api.requests
+            if r.method == "POST" and r.path == "/workspaces/ws-1/stories"
+        ]
+        assert creates == []
+        await fake_ws.close()
+
+
+async def test_new_story_surfaces_post_failure_via_notify(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
+):
+    """
+    A POST that fails (e.g. server 500) does not silently swallow the
+    error: the user sees the failure via notify and no card appears.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories/similar",
+        body={"items": [], "next_cursor": None},
+    )
+    mock_api.add(
+        "POST",
+        "/workspaces/ws-1/stories",
+        lambda _req: httpx.Response(
+            500,
+            json={"error": {"code": "server_error", "message": "boom"}},
+        ),
+    )
+    fake_editor.content_to_write = "# My new story\n\nbody text.\n"
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+        editor_runner=fake_editor,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.pause()
+        # POST was attempted but failed; no card appears.
+        posts = [
+            r
+            for r in mock_api.requests
+            if r.method == "POST" and r.path == "/workspaces/ws-1/stories"
+        ]
+        assert len(posts) == 1
+        backlog = app.screen.query_one("#col-backlog", BoardColumn)
+        assert [c.story for c in backlog.cards] == []
+        await fake_ws.close()

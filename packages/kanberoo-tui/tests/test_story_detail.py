@@ -295,6 +295,182 @@ async def test_add_comment_posts_when_non_empty(
         await fake_ws.close()
 
 
+async def test_linkages_tab_renders_human_id_and_title(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Each linkage row on the Linkages tab shows the target's
+    ``human_id "title"`` label, not just the UUID. Outgoing and
+    incoming linkages both resolve the far end; a 404 on one
+    linkage's target falls back to ``<uuid> (not accessible)``.
+    """
+    story_id = "story-1"
+    linkages = [
+        {
+            "id": "link-1",
+            "source_type": "story",
+            "source_id": story_id,
+            "target_type": "story",
+            "target_id": "story-5",
+            "link_type": "blocks",
+            "created_at": "2026-04-18T00:00:00Z",
+            "deleted_at": None,
+        },
+        {
+            "id": "link-2",
+            "source_type": "story",
+            "source_id": story_id,
+            "target_type": "story",
+            "target_id": "story-gone",
+            "link_type": "relates_to",
+            "created_at": "2026-04-18T00:00:00Z",
+            "deleted_at": None,
+        },
+        {
+            "id": "link-3",
+            "source_type": "story",
+            "source_id": "story-7",
+            "target_type": "story",
+            "target_id": story_id,
+            "link_type": "is_blocked_by",
+            "created_at": "2026-04-18T00:00:00Z",
+            "deleted_at": None,
+        },
+    ]
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    story_body = _story()
+    for _ in range(2):
+        mock_api.add(
+            "GET",
+            "/stories/story-1",
+            lambda _req, body=story_body: httpx.Response(
+                200,
+                json=body,
+                headers={"ETag": str(body["version"])},
+            ),
+        )
+    mock_api.json("GET", "/stories/story-1/comments", body=_empty_list())
+    mock_api.json("GET", "/stories/story-1/comments", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/stories/story-1/linkages",
+        body={"items": linkages, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1/linkages",
+        body={"items": linkages, "next_cursor": None},
+    )
+    # Resolve each linkage endpoint's story body. story-gone returns
+    # 404 to exercise the "(not accessible)" fallback.
+    mock_api.json(
+        "GET",
+        "/stories/story-5",
+        body={
+            "id": "story-5",
+            "workspace_id": "ws-1",
+            "epic_id": None,
+            "human_id": "KAN-5",
+            "title": "Try MCP from outer Claude",
+            "description": None,
+            "priority": "none",
+            "state": "backlog",
+            "state_actor_type": None,
+            "state_actor_id": None,
+            "branch_name": None,
+            "commit_sha": None,
+            "pr_url": None,
+            "created_at": "2026-04-17T00:00:00Z",
+            "updated_at": "2026-04-17T00:00:00Z",
+            "deleted_at": None,
+            "version": 1,
+        },
+    )
+    mock_api.add(
+        "GET",
+        "/stories/story-gone",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "gone"}},
+        ),
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-7",
+        body={
+            "id": "story-7",
+            "workspace_id": "ws-1",
+            "epic_id": None,
+            "human_id": "KAN-7",
+            "title": "Blocker we need to land",
+            "description": None,
+            "priority": "none",
+            "state": "todo",
+            "state_actor_type": None,
+            "state_actor_id": None,
+            "branch_name": None,
+            "commit_sha": None,
+            "pr_url": None,
+            "created_at": "2026-04-17T00:00:00Z",
+            "updated_at": "2026-04-17T00:00:00Z",
+            "deleted_at": None,
+            "version": 1,
+        },
+    )
+    mock_api.add(
+        "GET",
+        "/audit/entity/story/story-1",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    mock_api.add(
+        "GET",
+        "/audit/entity/story/story-1",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await _open_detail(app, pilot)
+        await pilot.press("3")
+        await pilot.pause()
+        await pilot.pause()
+        detail = app.screen
+        assert isinstance(detail, StoryDetailScreen)
+        linkages_body = detail.query("#linkages-body Static")
+        rendered = " ".join(str(s.render()) for s in linkages_body)
+        assert "KAN-5" in rendered
+        assert "Try MCP from outer Claude" in rendered
+        assert "KAN-7" in rendered
+        assert "Blocker we need to land" in rendered
+        assert "not accessible" in rendered
+        await fake_ws.close()
+
+
 async def test_audit_tab_renders_state_transition(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):
@@ -368,6 +544,298 @@ async def test_audit_tab_renders_state_transition(
         assert "todo" in rendered
         assert "in_progress" in rendered
         assert "\u2192" in rendered
+        await fake_ws.close()
+
+
+def _comment(
+    *,
+    id_: str,
+    body: str,
+    parent_id: str | None = None,
+) -> dict:
+    """
+    Canned comment body.
+    """
+    return {
+        "id": id_,
+        "story_id": "story-1",
+        "parent_id": parent_id,
+        "body": body,
+        "actor_type": "human",
+        "actor_id": "adam",
+        "created_at": "2026-04-18T00:00:00Z",
+        "updated_at": "2026-04-18T00:00:00Z",
+        "deleted_at": None,
+        "version": 1,
+    }
+
+
+async def test_reply_to_top_level_comment_posts_with_parent_id(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
+):
+    """
+    Pressing ``R`` (capital) with a top-level comment focused opens
+    the editor and POSTs a reply with ``parent_id`` set to that
+    comment's id.
+    """
+    top_level = _comment(id_="c-top", body="LGTM")
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    # Initial story detail load: comments populated.
+    story_body = _story()
+    for _ in range(3):
+        mock_api.add(
+            "GET",
+            "/stories/story-1",
+            lambda _req, body=story_body: httpx.Response(
+                200,
+                json=body,
+                headers={"ETag": str(body["version"])},
+            ),
+        )
+    mock_api.json(
+        "GET",
+        "/stories/story-1/comments",
+        body={"items": [top_level]},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1/comments",
+        body={"items": [top_level]},
+    )
+    mock_api.json("GET", "/stories/story-1/linkages", body=_empty_list())
+    mock_api.json("GET", "/stories/story-1/linkages", body=_empty_list())
+    mock_api.add(
+        "GET",
+        "/audit/entity/story/story-1",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    mock_api.add(
+        "GET",
+        "/audit/entity/story/story-1",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    # Reply POST:
+    reply_body = _comment(id_="c-reply", body="+1", parent_id="c-top")
+    mock_api.add(
+        "POST",
+        "/stories/story-1/comments",
+        lambda _req: httpx.Response(201, json=reply_body),
+    )
+    # Post-reply refresh routes:
+    mock_api.json(
+        "GET",
+        "/stories/story-1/comments",
+        body={"items": [top_level, reply_body]},
+    )
+    mock_api.json("GET", "/stories/story-1/linkages", body=_empty_list())
+    mock_api.add(
+        "GET",
+        "/audit/entity/story/story-1",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    fake_editor.content_to_write = "+1"
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+        editor_runner=fake_editor,
+    )
+    async with app.run_test() as pilot:
+        await _open_detail(app, pilot)
+        # Switch to the Comments tab and focus the only comment.
+        await pilot.press("2")
+        await pilot.pause()
+        from kanberoo_tui.screens.story_detail import CommentWidget
+
+        comment_widget = app.screen.query(CommentWidget).first()
+        assert comment_widget is not None
+        comment_widget.focus()
+        await pilot.pause()
+        # R reply
+        await pilot.press("R")
+        await pilot.pause()
+        await pilot.pause()
+
+        post_requests = [
+            r
+            for r in mock_api.requests
+            if r.method == "POST" and r.path == "/stories/story-1/comments"
+        ]
+        assert len(post_requests) == 1
+        assert post_requests[0].body == {"body": "+1", "parent_id": "c-top"}
+        await fake_ws.close()
+
+
+async def test_reply_to_reply_is_rejected(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
+):
+    """
+    Pressing ``R`` on a reply comment (one that already has a
+    ``parent_id``) flashes "cannot reply to a reply" and does not
+    POST. Spec section 3.1: one-level threading.
+    """
+    top_level = _comment(id_="c-top", body="LGTM")
+    reply = _comment(id_="c-reply", body="+1", parent_id="c-top")
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    story_body = _story()
+    for _ in range(2):
+        mock_api.add(
+            "GET",
+            "/stories/story-1",
+            lambda _req, body=story_body: httpx.Response(
+                200,
+                json=body,
+                headers={"ETag": str(body["version"])},
+            ),
+        )
+    mock_api.json(
+        "GET",
+        "/stories/story-1/comments",
+        body={"items": [top_level, reply]},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1/comments",
+        body={"items": [top_level, reply]},
+    )
+    mock_api.json("GET", "/stories/story-1/linkages", body=_empty_list())
+    mock_api.json("GET", "/stories/story-1/linkages", body=_empty_list())
+    mock_api.add(
+        "GET",
+        "/audit/entity/story/story-1",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    mock_api.add(
+        "GET",
+        "/audit/entity/story/story-1",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    # Deliberately no POST route: if the action wrongly fires, the
+    # MockApi's unknown-route assertion trips the test.
+    fake_editor.content_to_write = "+1"
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+        editor_runner=fake_editor,
+    )
+    async with app.run_test() as pilot:
+        await _open_detail(app, pilot)
+        await pilot.press("2")
+        await pilot.pause()
+        from kanberoo_tui.screens.story_detail import CommentWidget
+
+        reply_widget = next(
+            w for w in app.screen.query(CommentWidget) if w.comment["id"] == "c-reply"
+        )
+        reply_widget.focus()
+        await pilot.pause()
+        await pilot.press("R")
+        await pilot.pause()
+        await pilot.pause()
+        posts = [
+            r
+            for r in mock_api.requests
+            if r.method == "POST" and r.path == "/stories/story-1/comments"
+        ]
+        assert posts == []
+        # Editor should never have been invoked (short-circuited before edit_markdown).
+        assert fake_editor.invocations == []
+        await fake_ws.close()
+
+
+async def test_reply_without_focused_comment_no_ops(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory, fake_editor
+):
+    """
+    Pressing ``R`` with no comment focused (e.g. Description tab
+    active) flashes a hint and does nothing else.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body={"items": [_workspace()], "next_cursor": None},
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story()], "next_cursor": None},
+    )
+    _seed_detail_routes(mock_api)
+    fake_editor.content_to_write = "should never be written"
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+        editor_runner=fake_editor,
+    )
+    async with app.run_test() as pilot:
+        await _open_detail(app, pilot)
+        # Stay on Description tab; no comment widget can possibly hold
+        # focus (there are no comments seeded either).
+        await pilot.press("R")
+        await pilot.pause()
+        posts = [
+            r
+            for r in mock_api.requests
+            if r.method == "POST" and r.path == "/stories/story-1/comments"
+        ]
+        assert posts == []
+        assert fake_editor.invocations == []
         await fake_ws.close()
 
 

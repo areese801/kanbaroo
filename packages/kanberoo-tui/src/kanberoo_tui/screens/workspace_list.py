@@ -49,7 +49,7 @@ from kanberoo_tui.widgets.help_modal import KeybindingHelp
 
 WORKSPACE_EVENT_PREFIX = "workspace."
 
-FAST_QUIT_WINDOW_SECONDS = 0.5
+FAST_QUIT_WINDOW_SECONDS = 0.8
 
 HELP_ROWS: list[tuple[str, str]] = [
     ("j / k", "move cursor"),
@@ -72,6 +72,14 @@ class QuitConfirmModal(ModalScreen[bool]):
     dialog tiny and keyboard-first: ``y``/``enter`` accept, ``n``/
     ``escape`` dismiss, anything else is ignored so a stray keypress
     in the confirm path never quits the app.
+
+    Fast-exit: a ``q`` press while the modal has been visible less
+    than :data:`FAST_QUIT_WINDOW_SECONDS` is treated as the second
+    half of a power-user double-tap and calls ``app.exit()`` directly
+    (otherwise it cancels like ``n``/``escape``). The gate lives on
+    the modal because the screen's ``q`` binding is shadowed the
+    moment the modal mounts, so a screen-only timer never sees the
+    follow-up press.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -79,7 +87,7 @@ class QuitConfirmModal(ModalScreen[bool]):
         Binding("enter", "confirm", "Yes", priority=True),
         Binding("n", "cancel", "No", priority=True),
         Binding("escape", "cancel", "No", priority=True),
-        Binding("q", "cancel", "No", priority=True),
+        Binding("q", "q_fast_exit_or_cancel", "No", priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -106,10 +114,35 @@ class QuitConfirmModal(ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         """
         Lay out the centered confirm box.
+
+        The hint escapes its square brackets for Rich markup (``\\[``)
+        so ``[Y]es / [N]o`` renders literally instead of Rich swallowing
+        ``[y]`` and ``[n]`` as unknown tags and leaving ``es / o`` on
+        screen (cage delta regression).
         """
         with Vertical():
             yield Static("Quit Kanberoo?", classes="confirm-title")
-            yield Static("[y]es / [n]o", classes="confirm-hint")
+            yield Static(
+                "\\[Y]es  /  \\[N]o",
+                classes="confirm-hint",
+                id="quit-confirm-hint",
+            )
+
+    def __init__(self) -> None:
+        """
+        Build the modal. ``_opened_at`` fills in :meth:`on_mount` so
+        the fast-exit window is measured against the moment the modal
+        actually becomes visible.
+        """
+        super().__init__()
+        self._opened_at: float = 0.0
+
+    def on_mount(self) -> None:
+        """
+        Record the mount timestamp so ``action_q_fast_exit_or_cancel``
+        can tell a rapid double-tap apart from a considered cancel.
+        """
+        self._opened_at = time.monotonic()
 
     def action_confirm(self) -> None:
         """
@@ -121,6 +154,20 @@ class QuitConfirmModal(ModalScreen[bool]):
         """
         Dismiss with ``False`` so the caller stays on the list.
         """
+        self.dismiss(False)
+
+    def action_q_fast_exit_or_cancel(self) -> None:
+        """
+        Handle ``q`` while the modal is open.
+
+        A ``q`` landing within :data:`FAST_QUIT_WINDOW_SECONDS` of the
+        modal opening is treated as the second press in a double-tap
+        quit and exits the app immediately; otherwise it cancels the
+        modal like ``n``/``escape``.
+        """
+        if time.monotonic() - self._opened_at <= FAST_QUIT_WINDOW_SECONDS:
+            self.app.exit()
+            return
         self.dismiss(False)
 
 
@@ -382,10 +429,14 @@ class WorkspaceListScreen(Screen[None]):
         """
         Ask before quitting, with a rapid-double-tap fast-exit.
 
-        A single ``q`` pushes :class:`QuitConfirmModal`. A second ``q``
-        within :data:`FAST_QUIT_WINDOW_SECONDS` of the first skips the
-        modal and quits immediately so power users can double-tap to
-        exit without reading a prompt.
+        A single ``q`` pushes :class:`QuitConfirmModal`. The modal
+        owns the double-tap window for the common case (second ``q``
+        is consumed by the modal); the screen-level timer here catches
+        the rare case where the modal dismisses between presses and a
+        second ``q`` arrives back on the screen within the window. The
+        dismiss callback resets ``_last_q_at`` so a deliberate later
+        ``q`` still opens a fresh modal instead of snapping straight
+        into fast-exit mode.
         """
         now = time.monotonic()
         if now - self._last_q_at <= FAST_QUIT_WINDOW_SECONDS:
@@ -397,6 +448,8 @@ class WorkspaceListScreen(Screen[None]):
         def _on_dismiss(result: bool | None) -> None:
             if result:
                 self.app.exit()
+                return
+            self._last_q_at = 0.0
 
         await self.app.push_screen(QuitConfirmModal(), _on_dismiss)
 

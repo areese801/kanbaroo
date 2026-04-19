@@ -190,9 +190,16 @@ class EpicDetailScreen(Screen[None]):
     async def on_mount(self) -> None:
         """
         Register as the WS listener and load the scoped story list.
+
+        Also records the workspace as the app's last-seen workspace
+        so the global ``E`` binding still resolves a target after the
+        user navigates away to audit or search.
         """
         self._update_sub_title()
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
+        record = getattr(self.app, "record_workspace_context", None)
+        if record is not None:
+            record(self._workspace)
         await self.refresh_data()
 
     def _update_sub_title(self) -> None:
@@ -361,7 +368,25 @@ class EpicDetailScreen(Screen[None]):
 
     def _focused_card(self) -> StoryCard | None:
         """
-        Return the currently focused card or ``None``.
+        Return the card the user wants to act on, or ``None``.
+
+        Mirrors :meth:`BoardScreen._focused_card`: Textual focus wins
+        so a mouse click on a card lands subsequent ``>``/``m``/
+        ``enter`` actions on the clicked card. Falls back to the
+        indexed card when nothing card-shaped currently holds focus.
+        """
+        focused_card = self._card_for_focused_widget()
+        if focused_card is not None:
+            self._sync_active_indices(focused_card)
+            return focused_card
+        return self._indexed_card()
+
+    def _indexed_card(self) -> StoryCard | None:
+        """
+        Return the card at the tracker position, independent of
+        Textual focus. Navigation actions (``h``/``j``/``k``/``l``)
+        use this so moving the tracker is not shadowed by whatever
+        card currently holds focus.
         """
         column = self._column_at(self._active_col)
         cards = column.cards
@@ -369,6 +394,31 @@ class EpicDetailScreen(Screen[None]):
             return None
         self._active_row = max(0, min(self._active_row, len(cards) - 1))
         return cards[self._active_row]
+
+    def _card_for_focused_widget(self) -> StoryCard | None:
+        """
+        Walk upward from the focused widget to find an enclosing
+        :class:`StoryCard`, or ``None`` when nothing card-shaped holds
+        focus.
+        """
+        node: Any | None = self.focused
+        while node is not None:
+            if isinstance(node, StoryCard):
+                return node
+            node = getattr(node, "parent", None)
+        return None
+
+    def _sync_active_indices(self, card: StoryCard) -> None:
+        """
+        Align ``_active_col`` / ``_active_row`` with ``card``'s
+        position so keyboard nav resumes from the mouse-selected card.
+        """
+        for col_index in range(len(COLUMN_STATES)):
+            cards = self._column_at(col_index).cards
+            if card in cards:
+                self._active_col = col_index
+                self._active_row = cards.index(card)
+                return
 
     def _next_non_empty_column(self, start: int, step: int) -> int | None:
         """
@@ -390,13 +440,15 @@ class EpicDetailScreen(Screen[None]):
         Focus the next non-empty column's card at the same row.
 
         Empty columns are skipped so the mini-board matches the main
-        board's navigation feel.
+        board's navigation feel. Uses :meth:`_indexed_card` so the
+        tracker moves independently of whichever card currently holds
+        Textual focus.
         """
         target = self._next_non_empty_column(self._active_col, 1)
         if target is None:
             return
         self._active_col = target
-        card = self._focused_card()
+        card = self._indexed_card()
         if card is not None:
             card.focus()
 
@@ -408,7 +460,7 @@ class EpicDetailScreen(Screen[None]):
         if target is None:
             return
         self._active_col = target
-        card = self._focused_card()
+        card = self._indexed_card()
         if card is not None:
             card.focus()
 

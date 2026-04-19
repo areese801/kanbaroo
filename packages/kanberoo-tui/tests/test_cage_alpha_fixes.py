@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-from textual.widgets import SelectionList, TabbedContent
+from textual.widgets import SelectionList, Static, TabbedContent
 
 from kanberoo_tui.app import KanberooTuiApp
 from kanberoo_tui.screens.audit_feed import AuditFeedScreen
@@ -149,6 +149,55 @@ async def _open_detail(app, pilot):
 # ---------------------------------------------------------------------
 # Item 2: keyboard tab navigation on story detail
 # ---------------------------------------------------------------------
+
+
+async def test_story_detail_tab_labels_include_numeric_hints(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Each of the five story-detail tabs renders with its numeric
+    hotkey prefixed to the label, so users see the shortcut without
+    having to open the help overlay.
+    """
+    from textual.widgets import Tab
+
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace()]),
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story("story-1", "KAN-1")], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story("story-1", "KAN-1")], "next_cursor": None},
+    )
+    _seed_detail_routes(mock_api, story=_story("story-1", "KAN-1"))
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await _open_detail(app, pilot)
+        detail = app.screen
+        labels = [str(tab.label) for tab in detail.query(Tab)]
+        labels_joined = " | ".join(labels)
+        for expected in [
+            "1 Description",
+            "2 Comments",
+            "3 Linkages",
+            "4 Tags",
+            "5 Audit",
+        ]:
+            assert expected in labels_joined, labels_joined
+        await fake_ws.close()
 
 
 async def test_story_detail_numeric_tab_jump(
@@ -440,6 +489,208 @@ async def test_app_E_from_board_opens_epic_list(
         await fake_ws.close()
 
 
+async def test_slash_opens_search_from_every_screen(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    ``/`` is an app-level priority binding so it opens the search
+    overlay from every screen, not just the board. Regression guard
+    for the cage-delta report that only the kanban board responded
+    to ``/``.
+    """
+    from kanberoo_tui.screens.search import SearchScreen
+
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace()]),
+    )
+    # Search index build (walks every workspace's stories + comments).
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story("story-1", "KAN-1")], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1/comments",
+        body={"items": [], "next_cursor": None},
+    )
+    # Workspace-list count routes.
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # From the workspace list:
+        assert isinstance(app.screen, WorkspaceListScreen)
+        await pilot.press("slash")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, SearchScreen)
+        await fake_ws.close()
+
+
+async def test_slash_from_audit_feed_opens_search(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    ``/`` from the audit feed (a screen that had no ``slash`` binding
+    before) now opens the search overlay via the app-level priority
+    binding.
+    """
+    from kanberoo_tui.screens.search import SearchScreen
+
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace()]),
+    )
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.add(
+        "GET",
+        "/audit",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    # Search index build on /: workspaces + the single story.
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace()]),
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story("story-1", "KAN-1")], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-1/comments",
+        body={"items": [], "next_cursor": None},
+    )
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("A")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, AuditFeedScreen)
+        await pilot.press("slash")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, SearchScreen)
+        await fake_ws.close()
+
+
+async def test_app_E_from_audit_feed_uses_last_workspace(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    ``E`` pressed from the audit feed (which has no workspace context
+    of its own) falls back to the last workspace the user visited and
+    pushes the matching epic list. Regression guard for the cage-delta
+    "E from audit does nothing" report.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace()]),
+    )
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story("story-1", "KAN-1")], "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": [_story("story-1", "KAN-1")], "next_cursor": None},
+    )
+    # Audit endpoint returns 404 (cage K); screen renders placeholder
+    # but still tracks workspace context via the prior board visit.
+    mock_api.add(
+        "GET",
+        "/audit",
+        lambda _req: httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "cage K"}},
+        ),
+    )
+    # Epic list fetch once the E fallback lands us there.
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # workspace list -> board
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, BoardScreen)
+        # board -> audit feed
+        await pilot.press("A")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, AuditFeedScreen)
+        # audit feed has no current_workspace; E falls back to last.
+        assert app.last_workspace is not None
+        assert app.last_workspace["id"] == "ws-1"
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, EpicListScreen)
+        await fake_ws.close()
+
+
+async def test_app_E_without_workspace_flashes_and_no_ops(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``E`` from the workspace list with no rows (no workspace
+    ever opened) stays on the workspace list rather than crashing.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([]),
+    )
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, WorkspaceListScreen)
+        assert app.last_workspace is None
+        await pilot.press("E")
+        await pilot.pause()
+        # No workspaces means the workspace list's own E handler is a
+        # no-op; the screen stays put.
+        assert isinstance(app.screen, WorkspaceListScreen)
+        await fake_ws.close()
+
+
 async def test_app_A_opens_audit_feed_from_any_screen(
     mock_api, fake_ws, tui_config, client_factory, ws_factory
 ):
@@ -643,6 +894,74 @@ async def test_quit_modal_enter_quits(
         await fake_ws.close()
 
 
+async def test_quit_confirm_modal_label_renders_literal_brackets(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    The modal hint escapes its square brackets for Rich markup so the
+    user sees ``[Y]es  /  [N]o`` rather than Rich swallowing ``[y]``
+    and ``[n]`` as unknown tags and leaving ``es  /  o`` behind.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace()]),
+    )
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal)
+        hint = app.screen.query_one("#quit-confirm-hint", Static)
+        rendered = str(hint.render())
+        assert "Y" in rendered
+        assert "N" in rendered
+        assert "[Y]es" in rendered
+        assert "[N]o" in rendered
+        await fake_ws.close()
+
+
+async def test_qq_fast_exit_via_modal(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    Pressing ``q`` twice in quick succession on the workspace list
+    exits the app: the first press opens the modal, the second press
+    (handled by the modal's ``q`` binding within the fast-exit window)
+    calls ``app.exit()`` directly rather than cancelling the modal.
+    """
+    mock_api.json(
+        "GET",
+        "/workspaces",
+        body=_workspace_list_body([_workspace()]),
+    )
+    mock_api.json("GET", "/workspaces/ws-1/stories", body=_empty_list())
+    mock_api.json("GET", "/workspaces/ws-1/epics", body=_empty_list())
+
+    app = KanberooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, QuitConfirmModal)
+        await pilot.press("q")
+        await pilot.pause()
+        assert app._exit is True
+        await fake_ws.close()
+
+
 async def test_double_q_fast_exit_gate(monkeypatch):
     """
     Two ``action_quit_with_confirm`` invocations separated by less
@@ -691,7 +1010,7 @@ async def test_double_q_fast_exit_gate(monkeypatch):
         await screen.action_quit_with_confirm()
         assert len(push_calls) == 1
         assert exit_calls == [True]
-    assert FAST_QUIT_WINDOW_SECONDS == 0.5
+    assert FAST_QUIT_WINDOW_SECONDS == 0.8
 
 
 # ---------------------------------------------------------------------

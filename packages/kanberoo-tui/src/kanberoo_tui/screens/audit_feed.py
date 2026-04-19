@@ -74,7 +74,7 @@ def format_state_transition(event: dict[str, Any]) -> str | None:
 
 
 HELP_ROWS: list[tuple[str, str]] = [
-    ("r", "reconcile from /audit"),
+    ("r", "refresh from /audit"),
     ("q / esc", "back"),
     ("?", "this overlay"),
 ]
@@ -91,7 +91,7 @@ class AuditFeedScreen(Screen[None]):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("r", "reconcile", "Reconcile"),
+        Binding("r", "reconcile", "Refresh"),
         Binding("q", "back", "Back"),
         Binding("escape", "back", "Back", show=False),
         Binding("?", "show_help", "Help", show=False),
@@ -224,10 +224,14 @@ class AuditFeedScreen(Screen[None]):
 
     async def action_reconcile(self) -> None:
         """
-        Keybinding handler for ``r``.
+        Keybinding handler for ``r`` (labelled "Refresh" in the
+        binding list for consistency with every other screen). The
+        internal method name stays as "reconcile" because the action
+        also reconciles events missed while the screen was
+        backgrounded.
         """
         await self._reconcile()
-        self.notify("audit reconciled")
+        self.notify("audit refreshed")
 
     def action_back(self) -> None:
         """

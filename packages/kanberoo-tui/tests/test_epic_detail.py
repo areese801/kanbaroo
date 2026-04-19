@@ -20,6 +20,7 @@ from kanberoo_tui.screens.board import (
 from kanberoo_tui.screens.epic_detail import EpicDetailScreen
 from kanberoo_tui.screens.epic_list import EpicListScreen
 from kanberoo_tui.widgets.board_column import BoardColumn
+from kanberoo_tui.widgets.story_card import StoryCard
 
 
 def _workspace_list_body(items):
@@ -337,6 +338,86 @@ async def test_epic_detail_move_mode_transitions_story(
         assert transitions[0].method == "POST"
         assert transitions[0].body == {"to_state": "todo"}
         assert transitions[0].headers.get("if-match") == "1"
+        await fake_ws.close()
+
+
+async def test_epic_detail_quick_advance_uses_focused_card_not_indexed(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    With a card focused via mouse click (simulated by ``.focus()``)
+    that differs from the indexed tracker, ``>`` transitions the
+    focused card rather than the stale indexed one.
+    """
+    _seed_landing(mock_api, [_epic()])
+    initial = [
+        _story("story-1", "KAN-3", state="backlog", version=1),
+        _story("story-2", "KAN-4", state="backlog", version=1),
+    ]
+    after = [
+        _story("story-1", "KAN-3", state="backlog", version=1),
+        _story("story-2", "KAN-4", state="todo", version=2),
+    ]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": initial, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": after, "next_cursor": None},
+    )
+    mock_api.json(
+        "GET",
+        "/stories/story-2",
+        body=initial[1],
+        headers={"ETag": "1"},
+    )
+    mock_api.json(
+        "POST",
+        "/stories/story-2/transition",
+        body=after[1],
+        status_code=200,
+    )
+
+    app = await _open_detail(mock_api, fake_ws, tui_config, client_factory, ws_factory)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicDetailScreen)
+
+        # Default focus lands on KAN-3 (index 0 of backlog).
+        focused = app.focused
+        assert isinstance(focused, StoryCard)
+        assert focused.story["human_id"] == "KAN-3"
+
+        # Simulate a mouse click focusing KAN-4 directly.
+        kan_4 = next(
+            c for c in screen.query(StoryCard) if c.story["human_id"] == "KAN-4"
+        )
+        kan_4.focus()
+        await pilot.pause()
+
+        await pilot.press("greater_than_sign")
+        await pilot.pause()
+        await pilot.pause()
+
+        transitions = [
+            r
+            for r in mock_api.requests
+            if r.path.startswith("/stories/")
+            and r.path.endswith("/transition")
+            and r.method == "POST"
+        ]
+        assert len(transitions) == 1
+        assert transitions[0].path == "/stories/story-2/transition"
         await fake_ws.close()
 
 
