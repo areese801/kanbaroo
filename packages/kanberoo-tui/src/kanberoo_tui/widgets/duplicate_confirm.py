@@ -20,6 +20,18 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 
+def _escape_markup(value: str) -> str:
+    """
+    Escape ``[`` in ``value`` so Rich renders brackets literally.
+
+    Static widgets feed their text through Rich's markup parser, which
+    means user-provided titles like ``[WIP] rewrite`` disappear as
+    unknown tags. Prefixing every ``[`` with a backslash tells Rich to
+    treat the token as literal text.
+    """
+    return value.replace("[", "\\[")
+
+
 class DuplicateConfirm(ModalScreen[bool | None]):
     """
     Modal that warns the user about likely duplicates and prompts
@@ -85,6 +97,15 @@ class DuplicateConfirm(ModalScreen[bool | None]):
         """
         Lay out the centered panel: warning header, match list,
         prompt line.
+
+        The hint escapes its square brackets for Rich markup (``\\[``)
+        so ``[y]es / [n]o`` renders literally instead of Rich swallowing
+        ``[y]`` and ``[n]`` as unknown tags and leaving ``es / o`` on
+        screen (matches the fix applied to ``QuitConfirmModal``).
+
+        Title and labels from arbitrary user data are routed through
+        :func:`_escape_markup` so a story titled ``[WIP] whatever``
+        renders literally rather than as a Rich tag.
         """
         with Vertical():
             count = len(self._items)
@@ -94,11 +115,11 @@ class DuplicateConfirm(ModalScreen[bool | None]):
                 classes="dup-title",
             )
             for item in self._items:
-                label = str(item.get(self._label_key, "?"))
-                title = str(item.get("title") or item.get("name") or "")
+                label = _escape_markup(str(item.get(self._label_key, "?")))
+                title = _escape_markup(str(item.get("title") or item.get("name") or ""))
                 yield Static(f"  {label}  {title}")
             yield Static(
-                "[y]es create anyway  /  [n]o cancel",
+                "\\[y]es create anyway  /  \\[n]o cancel",
                 classes="dup-prompt",
             )
 

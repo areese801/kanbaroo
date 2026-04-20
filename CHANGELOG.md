@@ -6,6 +6,10 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 
 ### Added
 - `kanberoo-web` placeholder package reserved on PyPI for the future phase 2 web UI. Empty `src/kanberoo_web/` body, version `0.0.1` to signal "not released yet". Gets built and uploaded by the next `make publish` alongside the other packages.
+- TUI SVG snapshot test coverage via `pytest-textual-snapshot`. 17 baseline snapshots under `packages/kanberoo-tui/tests/__snapshots__/` cover every top-level screen (workspace list, board, all five story-detail tabs, epic list, epic detail, audit feed, search) and every modal (QuitConfirm, DuplicateConfirm, TagPicker, LinkPicker, TagFilter, help). Screens render through the real `KanberooTuiApp` with existing `MockApi`/`FakeWsStream` fixtures; modals use a minimal host App that pushes the modal on mount for a chrome-free baseline. Regenerate with `uv run pytest --snapshot-update` after an intentional UI change.
+
+### Fixed
+- TUI `DuplicateConfirm` modal hint renders as `[y]es create anyway  /  [n]o cancel` with literal brackets (previously Rich parsed `[y]` and `[n]` as unknown markup tags and ate the letters, leaving `es create anyway  /  o cancel`). Same Rich-escape idiom already applied to `QuitConfirmModal` during cage delta. User-supplied labels and titles inside the modal now also route through a `_escape_markup` helper so a story named `[WIP] rewrite` cannot break the modal.
 
 ## [0.1.0] - 2026-04-19
 
