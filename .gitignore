@@ -34,6 +34,12 @@ venv/
 # Ignore .env, which may hold sensitive variables / secrets
 .env
 
+# Cross-session scratch work tracking
+TODO.md
+
+# Human test plans (local scratch, not version-controlled)
+test-plans/
+
 # Publishing credentials (read by the Makefile's publish target)
 set_creds*.sh
 
