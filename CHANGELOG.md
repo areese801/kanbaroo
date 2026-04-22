@@ -11,6 +11,9 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 ### Fixed
 - TUI `DuplicateConfirm` modal hint renders as `[y]es create anyway  /  [n]o cancel` with literal brackets (previously Rich parsed `[y]` and `[n]` as unknown markup tags and ate the letters, leaving `es create anyway  /  o cancel`). Same Rich-escape idiom already applied to `QuitConfirmModal` during cage delta. User-supplied labels and titles inside the modal now also route through a `_escape_markup` helper so a story named `[WIP] rewrite` cannot break the modal.
 
+### Tests
+- 2 new TUI pilot tests covering the end-to-end `n` new-story flow on the board: (1) editor → POST → 201 → `story.created` WS → refetch renders exactly one card in Backlog, (2) race variant where the WS event arrives before the POST response returns. Both pass on current main — bug reported during round 3 hands-on validation did not reproduce headlessly; guards close the coverage gap so a future regression in the editor → POST → refetch chain is caught.
+
 ## [0.1.0] - 2026-04-19
 
 Initial PyPI release. Everything listed below shipped in this version. All six packages (`kanberoo`, `kanberoo-core`, `kanberoo-api`, `kanberoo-cli`, `kanberoo-tui`, `kanberoo-mcp`) uploaded to PyPI simultaneously with a `v0.1.0` git tag.
