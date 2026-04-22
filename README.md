@@ -114,7 +114,28 @@ Press `?` on any TUI screen for the keybinding cheatsheet. Press `/` from the wo
 
 The `kanberoo-web` package ships a Vite + React SPA that `kanberoo-api` serves at `/ui`. Once the API is running, visit `http://localhost:8080/ui` in a browser.
 
-Login is token-paste: create a token (`kb token create --actor-type human --actor-id you --name "web"`) and paste it into the login form. The token is stored in `localStorage` under `kanberoo.token`; press "Log out" to clear it.
+### First-boot inside the container
+
+`kb server start` runs `docker compose up -d`; the API runs inside the `kanberoo-api` container with its SQLite DB on a named volume. The volume is blank on first boot, so migrations and the initial token have to happen inside the container:
+
+```bash
+# Bring the stack up
+kb server start --wait
+
+# Apply migrations
+docker compose exec -e KANBEROO_DATABASE_URL="sqlite:////data/kanberoo.db" \
+  kanberoo-api \
+  uv run --no-dev alembic -c /app/packages/kanberoo-core/alembic.ini upgrade head
+
+# Mint the first token (print it once; save it)
+docker compose exec -e KANBEROO_DATABASE_URL="sqlite:////data/kanberoo.db" \
+  kanberoo-api \
+  uv run --no-dev kb init
+```
+
+Copy the `kbr_` token that `kb init` prints and paste it into the `/ui` login form. The token is stored in browser `localStorage` under `kanberoo.token`; press "Log out" to clear it.
+
+You can also mint additional tokens later with `kb token create --actor-type human --actor-id you --name "web"` (inside the container, same `docker compose exec` wrapper).
 
 Shipped in v0.2.0:
 
