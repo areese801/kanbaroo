@@ -3,7 +3,15 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '../state/auth';
-import { useTransitionStory, type TransitionStoryError } from './stories';
+import {
+  useAddStoryTags,
+  useRemoveStoryTag,
+  useStory,
+  useTransitionStory,
+  useUpdateStory,
+  type TransitionStoryError,
+} from './stories';
+import type { ApiError } from './http';
 import type { Story } from '../types/api';
 
 function makeStory(overrides: Partial<Story> = {}): Story {
@@ -146,5 +154,173 @@ describe('useTransitionStory', () => {
     expect(rolledBack?.[0]?.state).toBe('backlog');
     const err = result.current.error as TransitionStoryError | null;
     expect(err?.status).toBe(422);
+  });
+});
+
+describe('useStory', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    useAuthStore.getState().setToken('kbr_test_token');
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    useAuthStore.getState().clearToken();
+    vi.restoreAllMocks();
+  });
+
+  it('fetches a single story by id', async () => {
+    const story = makeStory({ id: 'st-one' });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      expect(url).toBe('/api/v1/stories/st-one');
+      return new Response(JSON.stringify(story), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = makeClient();
+    const { result } = renderHook(() => useStory('st-one'), {
+      wrapper: makeWrapper(client),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.id).toBe('st-one');
+  });
+});
+
+describe('useUpdateStory', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    useAuthStore.getState().setToken('kbr_test_token');
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    useAuthStore.getState().clearToken();
+    vi.restoreAllMocks();
+  });
+
+  it('patches the story with If-Match and replaces the cached story on success', async () => {
+    const initial = makeStory({ id: 'st-5', title: 'Old', version: 2 });
+    const updated = makeStory({ id: 'st-5', title: 'New', version: 3 });
+    const client = makeClient();
+    client.setQueryData<Story>(['story', 'st-5'], initial);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      expect(url).toBe('/api/v1/stories/st-5');
+      expect((init?.method ?? 'GET').toUpperCase()).toBe('PATCH');
+      const headers = new Headers(init?.headers);
+      expect(headers.get('If-Match')).toBe('2');
+      return new Response(JSON.stringify(updated), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ETag: '3' },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useUpdateStory('st-5', 'ws-1'), {
+      wrapper: makeWrapper(client),
+    });
+
+    result.current.mutate({ expectedVersion: 2, payload: { title: 'New' } });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const cached = client.getQueryData<Story>(['story', 'st-5']);
+    expect(cached?.title).toBe('New');
+    expect(cached?.version).toBe(3);
+  });
+
+  it('rolls back the cache and exposes .status=412 on conflict', async () => {
+    const initial = makeStory({ id: 'st-6', title: 'Stable', version: 7 });
+    const client = makeClient();
+    client.setQueryData<Story>(['story', 'st-6'], initial);
+
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ error: { code: 'version_conflict', message: 'mismatch' } }),
+        { status: 412, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useUpdateStory('st-6', 'ws-1'), {
+      wrapper: makeWrapper(client),
+    });
+
+    result.current.mutate({ expectedVersion: 7, payload: { title: 'Stomp' } });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    const rolledBack = client.getQueryData<Story>(['story', 'st-6']);
+    expect(rolledBack?.title).toBe('Stable');
+    expect((result.current.error as ApiError | null)?.status).toBe(412);
+  });
+});
+
+describe('useAddStoryTags / useRemoveStoryTag', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    useAuthStore.getState().setToken('kbr_test_token');
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    useAuthStore.getState().clearToken();
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs the tag ids and invalidates story-tags + story + audit', async () => {
+    const story = makeStory({ id: 'st-tag', version: 1 });
+    const client = makeClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      expect(url).toBe('/api/v1/stories/st-tag/tags');
+      expect(init?.body).toBe(JSON.stringify({ tag_ids: ['tag-a'] }));
+      return new Response(JSON.stringify(story), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useAddStoryTags('st-tag', 'ws-1'), {
+      wrapper: makeWrapper(client),
+    });
+    result.current.mutate({ tag_ids: ['tag-a'] });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['story-tags', 'st-tag'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['story', 'st-tag'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-tag'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['stories', 'ws-1'] });
+  });
+
+  it('DELETEs the association and invalidates the same keys', async () => {
+    const client = makeClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      expect(url).toBe('/api/v1/stories/st-tag/tags/tag-a');
+      expect((init?.method ?? 'GET').toUpperCase()).toBe('DELETE');
+      return new Response(null, { status: 204 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useRemoveStoryTag('st-tag', 'ws-1'), {
+      wrapper: makeWrapper(client),
+    });
+    result.current.mutate({ tagId: 'tag-a' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['story-tags', 'st-tag'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['story', 'st-tag'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-tag'] });
   });
 });

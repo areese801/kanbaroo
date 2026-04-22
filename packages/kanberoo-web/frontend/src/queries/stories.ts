@@ -6,8 +6,8 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { apiFetch } from '../api/client';
-import { requestJson } from './http';
-import type { Paginated, Story, StoryState } from '../types/api';
+import { apiRequest, makeApiError, requestJson, type ApiError } from './http';
+import type { Paginated, Story, StoryPriority, StoryState } from '../types/api';
 
 export function useStoriesByWorkspace(
   workspaceId: string | null | undefined,
@@ -22,6 +22,152 @@ export function useStoriesByWorkspace(
       return envelope.items;
     },
     enabled: Boolean(workspaceId),
+  });
+}
+
+export function useStory(
+  storyId: string | null | undefined,
+): UseQueryResult<Story, Error> {
+  return useQuery<Story, Error>({
+    queryKey: ['story', storyId],
+    queryFn: () =>
+      requestJson<Story>(`/api/v1/stories/${encodeURIComponent(storyId as string)}`),
+    enabled: Boolean(storyId),
+  });
+}
+
+export type StoryUpdatePayload = {
+  title?: string;
+  description?: string | null;
+  priority?: StoryPriority;
+  epic_id?: string | null;
+  branch_name?: string | null;
+  commit_sha?: string | null;
+  pr_url?: string | null;
+};
+
+export type UpdateStoryInput = {
+  expectedVersion: number;
+  payload: StoryUpdatePayload;
+};
+
+type UpdateStoryContext = {
+  previous: Story | undefined;
+};
+
+export function useUpdateStory(
+  storyId: string,
+  workspaceId: string | null | undefined,
+): UseMutationResult<Story, ApiError, UpdateStoryInput, UpdateStoryContext> {
+  const queryClient = useQueryClient();
+  const storyKey = ['story', storyId] as const;
+  return useMutation<Story, ApiError, UpdateStoryInput, UpdateStoryContext>({
+    mutationFn: async (input) => {
+      const response = await apiFetch(
+        `/api/v1/stories/${encodeURIComponent(storyId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'If-Match': String(input.expectedVersion),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(input.payload),
+        },
+      );
+      if (!response.ok) {
+        let body = '';
+        try {
+          body = await response.text();
+        } catch {
+          // ignore
+        }
+        throw makeApiError(response.status, response.statusText, body);
+      }
+      return (await response.json()) as Story;
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: storyKey });
+      const previous = queryClient.getQueryData<Story>(storyKey);
+      if (previous) {
+        queryClient.setQueryData<Story>(storyKey, {
+          ...previous,
+          ...input.payload,
+        } as Story);
+      }
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData<Story>(storyKey, context.previous);
+      }
+    },
+    onSuccess: (story) => {
+      queryClient.setQueryData<Story>(storyKey, story);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: storyKey });
+      if (workspaceId) {
+        queryClient.invalidateQueries({ queryKey: ['stories', workspaceId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['audit', 'story', storyId] });
+    },
+  });
+}
+
+export type AddStoryTagsInput = { tag_ids: string[] };
+
+export function useAddStoryTags(
+  storyId: string,
+  workspaceId: string | null | undefined,
+): UseMutationResult<Story, ApiError, AddStoryTagsInput> {
+  const queryClient = useQueryClient();
+  return useMutation<Story, ApiError, AddStoryTagsInput>({
+    mutationFn: async (input) => {
+      const response = await apiRequest(
+        `/api/v1/stories/${encodeURIComponent(storyId)}/tags`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(input),
+        },
+      );
+      return (await response.json()) as Story;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['story-tags', storyId] });
+      queryClient.invalidateQueries({ queryKey: ['story', storyId] });
+      queryClient.invalidateQueries({ queryKey: ['audit', 'story', storyId] });
+      if (workspaceId) {
+        queryClient.invalidateQueries({ queryKey: ['stories', workspaceId] });
+      }
+    },
+  });
+}
+
+export type RemoveStoryTagInput = { tagId: string };
+
+export function useRemoveStoryTag(
+  storyId: string,
+  workspaceId: string | null | undefined,
+): UseMutationResult<void, ApiError, RemoveStoryTagInput> {
+  const queryClient = useQueryClient();
+  return useMutation<void, ApiError, RemoveStoryTagInput>({
+    mutationFn: async (input) => {
+      await apiRequest(
+        `/api/v1/stories/${encodeURIComponent(storyId)}/tags/${encodeURIComponent(
+          input.tagId,
+        )}`,
+        { method: 'DELETE' },
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['story-tags', storyId] });
+      queryClient.invalidateQueries({ queryKey: ['story', storyId] });
+      queryClient.invalidateQueries({ queryKey: ['audit', 'story', storyId] });
+      if (workspaceId) {
+        queryClient.invalidateQueries({ queryKey: ['stories', workspaceId] });
+      }
+    },
   });
 }
 

@@ -459,6 +459,83 @@ def test_remove_tag_from_story_is_204(client: TestClient, human_auth: Any) -> No
     assert second.status_code == 204
 
 
+def test_list_tags_for_story_returns_attached_tags_ordered_by_name(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    GET ``/stories/{id}/tags`` returns every tag currently associated
+    with the story, alphabetised by name.
+    """
+    ws = _create_workspace(client, human_auth)
+    story = _create_story(client, human_auth, ws["id"])
+    tag_b = _create_tag(client, human_auth, ws["id"], name="beta")
+    tag_a = _create_tag(client, human_auth, ws["id"], name="alpha")
+    client.post(
+        f"/api/v1/stories/{story['id']}/tags",
+        json={"tag_ids": [tag_b["id"], tag_a["id"]]},
+        headers=human_auth.headers,
+    )
+
+    response = client.get(
+        f"/api/v1/stories/{story['id']}/tags",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [t["id"] for t in items] == [tag_a["id"], tag_b["id"]]
+    assert [t["name"] for t in items] == ["alpha", "beta"]
+
+
+def test_list_tags_for_story_empty_when_no_tags_attached(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    A story with no tag associations returns an empty ``items`` list.
+    """
+    ws = _create_workspace(client, human_auth)
+    story = _create_story(client, human_auth, ws["id"])
+    response = client.get(
+        f"/api/v1/stories/{story['id']}/tags",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+
+
+def test_list_tags_for_story_404_when_story_unknown(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    GET against a bogus story id returns 404.
+    """
+    response = client.get(
+        "/api/v1/stories/does-not-exist/tags",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 404
+
+
+def test_list_tags_for_story_404_when_story_soft_deleted(
+    client: TestClient, human_auth: Any
+) -> None:
+    """
+    GET against a soft-deleted story returns 404.
+    """
+    ws = _create_workspace(client, human_auth)
+    story = _create_story(client, human_auth, ws["id"])
+    delete_response = client.delete(
+        f"/api/v1/stories/{story['id']}",
+        headers={**human_auth.headers, "If-Match": str(story["version"])},
+    )
+    assert delete_response.status_code == 204
+
+    response = client.get(
+        f"/api/v1/stories/{story['id']}/tags",
+        headers=human_auth.headers,
+    )
+    assert response.status_code == 404
+
+
 def test_list_stories_filters_by_tag_name(client: TestClient, human_auth: Any) -> None:
     """
     ``?tag=<name>`` restricts the list to stories carrying that tag in

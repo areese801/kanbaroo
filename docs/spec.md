@@ -408,6 +408,7 @@ GET    /stories/by-key/{human_id}          # Read by KAN-123
 PATCH  /stories/{id}                       # Update (title, description, priority, epic_id, branch, commit, PR)
 DELETE /stories/{id}                       # Soft delete
 POST   /stories/{id}/transition            # Body: { to_state, reason? }
+GET    /stories/{id}/tags                  # List tags attached to the story
 POST   /stories/{id}/tags                  # Body: { tag_ids: [...] } (add)
 DELETE /stories/{id}/tags/{tag_id}         # Remove tag
 ```
