@@ -51,6 +51,28 @@ docker compose up -d
 docker compose logs -f kanberoo-api
 ```
 
+### `kb server start` runs docker-compose, not a foreground uvicorn
+
+`uv run kb server start` (and the pipx-installed `kb server start`) is a thin wrapper around `docker compose up -d`. It does NOT run uvicorn in your terminal. The API runs inside the `kanberoo-api` container with its SQLite DB on a named volume (`kanberoo-data`, mounted at `/data/kanberoo.db`). Any `$KANBEROO_CONFIG_DIR` or `KANBEROO_DATABASE_URL` env vars set in your host shell are irrelevant to the container.
+
+### First-boot container setup
+
+The container's DB volume is blank on first boot. Host-side `kb init` writes to a different SQLite file and does not help. Run migrations + token minting INSIDE the container:
+
+```bash
+# 1. Apply migrations against the container DB
+docker compose exec -e KANBEROO_DATABASE_URL="sqlite:////data/kanberoo.db" \
+  kanberoo-api \
+  uv run --no-dev alembic -c /app/packages/kanberoo-core/alembic.ini upgrade head
+
+# 2. Mint a token and write the container-side config.toml
+docker compose exec -e KANBEROO_DATABASE_URL="sqlite:////data/kanberoo.db" \
+  kanberoo-api \
+  uv run --no-dev kb init
+```
+
+Token value is printed by `kb init` and does not repeat; copy it. Paste it into the web UI's login form or save it to `~/.kanberoo/config.toml` (at minimum: `api_url = "http://localhost:8080"` and `token = "kbr_..."`) for TUI access. Note: `docker compose up -d` after an image rebuild recreates the container and wipes its writable filesystem (including `/root/.kanberoo/config.toml`); the named volume at `/data` persists, so the DB survives but you'll need to re-run `kb init` to regenerate the container-side config.
+
 ### Web UI development
 
 The `kanberoo-web` package ships a Vite + React SPA under `packages/kanberoo-web/frontend/`. The production build lives at `packages/kanberoo-web/src/kanberoo_web/dist/` and is committed so the wheel picks it up; only the built output, not the sources, needs to be in the wheel.
@@ -66,7 +88,7 @@ make web-dev
 make web-test
 ```
 
-Node 20+ is required at build time. `make publish` does not yet rebuild the frontend automatically; that wiring lands in milestone M6.
+Node 20+ is required at build time. `make publish` chains `web-build` before `build` so the release wheel always ships a fresh bundle; `make build` on its own does not rebuild the SPA so dev iteration stays fast.
 
 ## Repo Structure
 
@@ -171,6 +193,41 @@ Every mutable entity has a `version` column. The pattern:
 4. On success, increments `version` atomically with the update.
 
 If you're adding a new mutable entity, follow this pattern. If you're adding a new mutation, verify the If-Match check is in place.
+
+### Client-side edit-mode version freeze
+
+Any UI that lets users edit a versioned entity must **snapshot `version` when entering edit mode** and use that frozen value for `If-Match` at save time. Do NOT read `version` from the live TanStack Query cache at mutation-call time.
+
+Why: the web UI's WebSocket hook invalidates and refetches entity queries when another client mutates them. If the edit form reads `version` from the cache at save, a refetch triggered by another client's write between "user clicked Edit" and "user clicked Save" will silently bump the cached version, making the user's save carry the newer version, match the server, and overwrite the other client's changes without triggering the 412 conflict path.
+
+The pattern (see `packages/kanberoo-web/frontend/src/routes/StoryDetail.tsx`):
+
+```tsx
+const [editBaseVersion, setEditBaseVersion] = useState<number | null>(null);
+
+function startEditing() {
+  setEditForm(initialFormState(story));
+  setEditBaseVersion(story.version);   // freeze
+  setEditing(true);
+}
+
+// At save:
+updateStory.mutate({ expectedVersion: editBaseVersion ?? story.version, payload });
+```
+
+On 412, the conflict modal fires, the stale edits are intentionally dropped, and the user re-reads the latest and re-applies. This is the correct REST-concurrency contract.
+
+Required for every new editable entity added to the web UI (epic, comment, workspace, any future surface). The same rule applies to the TUI's edit screens.
+
+### WebSocket event payload shape
+
+Every event payload MUST carry enough scope IDs for clients to filter. In practice:
+
+- Story events (`story.created`, `story.updated`, `story.deleted`, `story.transitioned`, `story.commented`, `story.tag_added`, `story.tag_removed`) carry `workspace_id` and `story_id`. Clients subscribed to a single workspace's board rely on `payload.workspace_id === workspaceId` to decide whether to invalidate.
+- Comment events carry `story_id` so the comments-for-story query can invalidate without a full refetch.
+- Tag and linkage events carry the parent `story_id` or `workspace_id`.
+
+A payload that is just a partial diff (for example `{from_state, to_state}`) silently breaks client-side filtering and is a latent bug. If you add a new event type, either dump the full entity state (`after`) as the payload, or explicitly include the parent scope IDs.
 
 ### WebSocket Event Emission
 
