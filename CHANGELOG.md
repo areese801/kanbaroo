@@ -4,6 +4,12 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Fixed
+
+- `story.transitioned` WebSocket event payload now includes `workspace_id` and `story_id` so the web UI's event stream filter matches and the board refetches after a TUI-originated transition. Previously the payload only carried `from_state` / `to_state` (and an optional `reason`), so TUI drags updated the database but the web UI silently kept the stale card.
+- Story-detail Edit mode freezes the story's version at the moment Edit is clicked and sends that frozen number in `If-Match` on Save. Tab A's save no longer races tab B into seeing a refreshed version before Save, so the two-tab conflict modal fires as intended.
+- Board column headings no longer display the story count in the visible heading. The count stays on the column's `aria-label` so screen readers still announce it.
+
 ## [0.2.0] - 2026-04-22
 
 Phase 2 release. The web UI ships. All six production packages (`kanberoo`, `kanberoo-core`, `kanberoo-api`, `kanberoo-cli`, `kanberoo-tui`, `kanberoo-mcp`) jump from `0.1.0` to `0.2.0`; `kanberoo-web` is now released for real at `0.2.0` (placeholder `0.0.1` was reserved in the v0.1.0 cycle).

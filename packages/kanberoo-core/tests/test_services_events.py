@@ -302,6 +302,8 @@ async def test_story_lifecycle_and_transition(session: Session) -> None:
     ]
     transition = collector.events[2]
     assert transition.payload == {
+        "workspace_id": workspace.id,
+        "story_id": story.id,
         "from_state": "backlog",
         "to_state": "todo",
         "reason": "ready to pick up",
@@ -340,6 +342,8 @@ async def test_story_transition_without_reason_omits_it(session: Session) -> Non
 
     assert collector.types() == ["story.transitioned"]
     assert collector.events[0].payload == {
+        "workspace_id": workspace.id,
+        "story_id": story.id,
         "from_state": "backlog",
         "to_state": "todo",
     }

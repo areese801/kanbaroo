@@ -344,6 +344,7 @@ export default function StoryDetail(): JSX.Element {
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditFormState | null>(null);
+  const [editBaseVersion, setEditBaseVersion] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showConflict, setShowConflict] = useState(false);
   const [commentConflictId, setCommentConflictId] = useState<string | null>(null);
@@ -359,12 +360,14 @@ export default function StoryDetail(): JSX.Element {
       return;
     }
     setForm(initialFormState(story));
+    setEditBaseVersion(story.version);
     setSaveError(null);
     setEditing(true);
   }, [story, editing]);
 
   const handleExitEdit = useCallback((): void => {
     setEditing(false);
+    setEditBaseVersion(null);
     setSaveError(null);
   }, []);
 
@@ -423,10 +426,11 @@ export default function StoryDetail(): JSX.Element {
     }
     setSaveError(null);
     updateStory.mutate(
-      { expectedVersion: story.version, payload },
+      { expectedVersion: editBaseVersion ?? story.version, payload },
       {
         onSuccess: () => {
           setEditing(false);
+          setEditBaseVersion(null);
         },
         onError: (err: ApiError) => {
           if (err.status === 412) {
@@ -443,6 +447,7 @@ export default function StoryDetail(): JSX.Element {
   const handleConflictAck = (): void => {
     setShowConflict(false);
     setEditing(false);
+    setEditBaseVersion(null);
     setSaveError(null);
   };
 

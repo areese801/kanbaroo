@@ -512,6 +512,8 @@ def transition_story(
         after=after,
     )
     transition_payload: dict[str, Any] = {
+        "workspace_id": story.workspace_id,
+        "story_id": story.id,
         "from_state": current_state.value,
         "to_state": target_state.value,
     }

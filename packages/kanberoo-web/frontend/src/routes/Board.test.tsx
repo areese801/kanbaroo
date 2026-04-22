@@ -177,7 +177,7 @@ describe('Board', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders five columns in the pinned order with counts', async () => {
+  it('renders five columns in the pinned order with counts in aria-label', async () => {
     const stories: Story[] = [
       makeStory({ id: 'a', human_id: 'KAN-1', state: 'backlog' }),
       makeStory({ id: 'b', human_id: 'KAN-2', state: 'backlog' }),
@@ -223,11 +223,11 @@ describe('Board', () => {
       'Done, 1 story',
     ]);
 
-    expect(within(backlog).getByText('(2)')).toBeInTheDocument();
-    expect(within(todo).getByText('(1)')).toBeInTheDocument();
-    expect(within(inProgress).getByText('(1)')).toBeInTheDocument();
-    expect(within(inReview).getByText('(0)')).toBeInTheDocument();
-    expect(within(done).getByText('(1)')).toBeInTheDocument();
+    expect(within(backlog).queryByText('(2)')).not.toBeInTheDocument();
+    expect(within(todo).queryByText('(1)')).not.toBeInTheDocument();
+    expect(within(inProgress).queryByText('(1)')).not.toBeInTheDocument();
+    expect(within(inReview).queryByText('(0)')).not.toBeInTheDocument();
+    expect(within(done).queryByText('(1)')).not.toBeInTheDocument();
   });
 
   it('renders a story in the In progress column with its human_id, title, priority chip, and actor badge', async () => {

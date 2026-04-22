@@ -200,6 +200,62 @@ describe('StoryDetail', () => {
     );
   });
 
+  it('freezes the base version when entering edit mode so a concurrent refetch does not unstale the If-Match', async () => {
+    const patchHeaders: Headers[] = [];
+    let currentStory: Story = STORY;
+    const router = fetchRouter({
+      '/api/v1/stories/st-1/comments': () => jsonResponse({ items: [] }),
+      '/api/v1/stories/st-1/tags': () => jsonResponse({ items: [] }),
+      '/api/v1/audit/entity/story/st-1': () =>
+        jsonResponse({ items: [], next_cursor: null }),
+      '/api/v1/workspaces/ws-1/epics': () =>
+        jsonResponse({ items: [EPIC], next_cursor: null }),
+      '/api/v1/workspaces/ws-1/tags': () => jsonResponse({ items: [] }),
+      '/api/v1/workspaces/ws-1': () => jsonResponse(WORKSPACE),
+      '/api/v1/stories/st-1': (_input, init) => {
+        if ((init?.method ?? 'GET').toUpperCase() === 'PATCH') {
+          patchHeaders.push(new Headers(init?.headers));
+          currentStory = {
+            ...currentStory,
+            title: 'Stomp',
+            version: currentStory.version + 1,
+          };
+          return jsonResponse(currentStory);
+        }
+        return jsonResponse(currentStory);
+      },
+    });
+    globalThis.fetch = router as unknown as typeof fetch;
+
+    const { queryClient } = renderDetail();
+    expect(await screen.findByRole('heading', { name: 'Ship the thing' })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const titleInput = screen.getByLabelText('Title') as HTMLInputElement;
+    await user.clear(titleInput);
+    await user.type(titleInput, 'Stomp');
+
+    // Simulate tab A's save landing on tab B mid-edit: a story.updated event
+    // arrives, the cache is invalidated, and the next fetch returns version
+    // N+1 before the user clicks Save. Without the freeze, the save would
+    // read the fresh version and succeed (no 412).
+    act(() => {
+      queryClient.setQueryData<Story>(['story', 'st-1'], {
+        ...STORY,
+        version: STORY.version + 1,
+      });
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    });
+
+    await waitFor(() => expect(patchHeaders.length).toBe(1));
+    expect(patchHeaders[0]!.get('If-Match')).toBe(String(STORY.version));
+    expect(patchHeaders[0]!.get('If-Match')).not.toBe(String(STORY.version + 1));
+  });
+
   it('surfaces the conflict modal on 412 and reverts to display mode on OK', async () => {
     let patchCalls = 0;
     const router = fetchRouter({
