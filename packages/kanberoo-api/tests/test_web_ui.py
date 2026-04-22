@@ -76,3 +76,15 @@ def test_web_assets_path_points_at_bundled_dist() -> None:
     assets = kanberoo_web.web_assets_path()
     assert assets.is_dir()
     assert (assets / "index.html").is_file()
+
+
+def test_ui_serves_spa_shell(client: TestClient) -> None:
+    """
+    ``GET /ui/`` returns the Vite-built SPA shell: a ``<div id="root">``
+    mount point plus a hashed module script tag under ``/ui/assets/``.
+    """
+    response = client.get("/ui/")
+    assert response.status_code == 200
+    assert '<div id="root">' in response.text
+    assert "/ui/assets/" in response.text
+    assert 'type="module"' in response.text

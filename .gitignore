@@ -30,6 +30,13 @@ dist/
 !packages/kanberoo-web/src/kanberoo_web/dist/
 !packages/kanberoo-web/src/kanberoo_web/dist/**
 
+# kanberoo-web frontend (Vite + React build inputs; only the built dist
+# under src/kanberoo_web/dist/ is version-controlled).
+packages/kanberoo-web/frontend/node_modules/
+packages/kanberoo-web/frontend/dist/
+packages/kanberoo-web/frontend/.vite/
+packages/kanberoo-web/frontend/coverage/
+
 # Don't track virtual environment subdirectories
 virtualenv/
 .venv/
