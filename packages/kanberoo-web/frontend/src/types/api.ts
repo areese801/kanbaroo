@@ -83,3 +83,71 @@ export const ACTOR_LABELS: Record<ActorType, string> = {
   claude: 'Claude',
   system: 'System',
 };
+
+export type EpicState = 'open' | 'closed';
+
+export interface Epic {
+  id: string;
+  workspace_id: string;
+  human_id: string;
+  title: string;
+  description: string | null;
+  state: EpicState;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  version: number;
+}
+
+export interface Comment {
+  id: string;
+  story_id: string;
+  parent_id: string | null;
+  body: string;
+  actor_type: ActorType;
+  actor_id: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  version: number;
+}
+
+export type CommentListResponse = {
+  items: Comment[];
+};
+
+export type AuditAction =
+  | 'created'
+  | 'updated'
+  | 'soft_deleted'
+  | 'state_changed'
+  | 'commented'
+  | 'linked'
+  | 'unlinked'
+  | 'tag_added'
+  | 'tag_removed';
+
+export type AuditEntityType =
+  | 'workspace'
+  | 'epic'
+  | 'story'
+  | 'comment'
+  | 'tag'
+  | 'linkage';
+
+export type AuditDiff = {
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  raw?: string;
+};
+
+export interface AuditEvent {
+  id: string;
+  occurred_at: string;
+  actor_type: ActorType;
+  actor_id: string;
+  entity_type: AuditEntityType;
+  entity_id: string;
+  action: AuditAction | string;
+  diff: AuditDiff;
+}

@@ -149,6 +149,30 @@ def list_tags(
     return list(session.execute(stmt).scalars().all())
 
 
+def list_tags_for_story(
+    session: Session,
+    *,
+    story_id: str,
+) -> list[Tag]:
+    """
+    Return every live tag associated with ``story_id`` ordered by name.
+
+    Raises :class:`NotFoundError` if the story does not exist or has
+    been soft-deleted. The story-side ``story_tags`` table has no
+    lifecycle of its own: when a tag is soft-deleted the association
+    is removed, so a soft-deleted tag can never appear in the result.
+    """
+    _get_live_story(session, story_id)
+    stmt = (
+        select(Tag)
+        .join(story_tags, story_tags.c.tag_id == Tag.id)
+        .where(story_tags.c.story_id == story_id)
+        .order_by(Tag.name, Tag.id)
+    )
+    stmt = live(stmt, Tag)
+    return list(session.execute(stmt).scalars().all())
+
+
 def get_tag(
     session: Session,
     *,

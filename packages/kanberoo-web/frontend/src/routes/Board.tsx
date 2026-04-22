@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -77,9 +77,14 @@ function StoryCardContent({ story }: { story: Story }): JSX.Element {
 type DraggableStoryCardProps = {
   story: Story;
   isDragging: boolean;
+  onOpen: (storyId: string) => void;
 };
 
-function DraggableStoryCard({ story, isDragging }: DraggableStoryCardProps): JSX.Element {
+function DraggableStoryCard({
+  story,
+  isDragging,
+  onOpen,
+}: DraggableStoryCardProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `story-${story.id}`,
     data: { storyId: story.id, fromState: story.state, version: story.version },
@@ -96,6 +101,7 @@ function DraggableStoryCard({ story, isDragging }: DraggableStoryCardProps): JSX
       className="story-card"
       style={style}
       data-story-id={story.id}
+      onClick={() => onOpen(story.id)}
       {...listeners}
       {...attributes}
     >
@@ -111,6 +117,7 @@ type ColumnProps = {
   loadingHint: boolean;
   activeFromState: StoryState | null;
   draggingStoryId: string | null;
+  onOpenStory: (storyId: string) => void;
 };
 
 function Column({
@@ -120,6 +127,7 @@ function Column({
   loadingHint,
   activeFromState,
   draggingStoryId,
+  onOpenStory,
 }: ColumnProps): JSX.Element {
   const label = STATE_LABELS[state];
   const { setNodeRef, isOver } = useDroppable({ id: `column-${state}` });
@@ -159,6 +167,7 @@ function Column({
             key={story.id}
             story={story}
             isDragging={draggingStoryId === story.id}
+            onOpen={onOpenStory}
           />
         ))}
       </div>
@@ -213,9 +222,14 @@ type Banner = {
 
 export default function Board(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>();
+  const navigate = useNavigate();
   const workspaceQuery = useWorkspace(workspaceId);
   const storiesQuery = useStoriesByWorkspace(workspaceId);
   useWorkspaceTags(workspaceId);
+
+  const handleOpenStory = (storyId: string): void => {
+    navigate(`/stories/${encodeURIComponent(storyId)}`);
+  };
 
   const eventStream = useEventStream(workspaceId ?? null);
   const liveStatus = liveStatusFrom(eventStream);
@@ -383,6 +397,7 @@ export default function Board(): JSX.Element {
               isBacklogEmptyHint={state === 'backlog' && boardIsEmpty}
               activeFromState={activeCard?.fromState ?? null}
               draggingStoryId={activeCard?.storyId ?? null}
+              onOpenStory={handleOpenStory}
             />
           ))}
         </div>

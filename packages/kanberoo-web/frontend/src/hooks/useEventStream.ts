@@ -105,9 +105,48 @@ export function useEventStream(workspaceId: string | null | undefined): EventStr
         }
         const event = frame as unknown as ServerEvent;
         if (event.entity_type === 'story') {
-          const payloadWorkspaceId = (event.payload as { workspace_id?: unknown }).workspace_id;
+          const payload = event.payload as {
+            workspace_id?: unknown;
+            story_id?: unknown;
+          };
+          const payloadWorkspaceId = payload.workspace_id;
           if (typeof payloadWorkspaceId === 'string' && payloadWorkspaceId === workspaceId) {
             queryClient.invalidateQueries({ queryKey: ['stories', workspaceId] });
+          }
+          // Resolve the story id: for story.* events the entity IS the
+          // story; for comment.* and tag-association events the payload
+          // carries an explicit story_id.
+          const storyId =
+            event.event_type.startsWith('story.')
+              ? event.entity_id
+              : typeof payload.story_id === 'string'
+                ? payload.story_id
+                : null;
+          if (storyId) {
+            queryClient.invalidateQueries({ queryKey: ['story', storyId] });
+            queryClient.invalidateQueries({ queryKey: ['audit', 'story', storyId] });
+            if (
+              event.event_type === 'story.tag_added' ||
+              event.event_type === 'story.tag_removed'
+            ) {
+              queryClient.invalidateQueries({ queryKey: ['story-tags', storyId] });
+            }
+            if (
+              event.event_type === 'story.commented' ||
+              event.event_type === 'comment.updated' ||
+              event.event_type === 'comment.deleted'
+            ) {
+              queryClient.invalidateQueries({ queryKey: ['comments', storyId] });
+            }
+          }
+          return;
+        }
+        if (event.entity_type === 'comment') {
+          const payload = event.payload as { story_id?: unknown };
+          const storyId = typeof payload.story_id === 'string' ? payload.story_id : null;
+          if (storyId) {
+            queryClient.invalidateQueries({ queryKey: ['comments', storyId] });
+            queryClient.invalidateQueries({ queryKey: ['audit', 'story', storyId] });
           }
           return;
         }

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from kanberoo_api.auth import resolve_actor
 from kanberoo_api.concurrency import etag_for, parse_if_match
 from kanberoo_api.db import get_session
+from kanberoo_api.routers.tags import TagListResponse
 from kanberoo_core.actor import Actor
 from kanberoo_core.enums import StoryPriority, StoryState
 from kanberoo_core.schemas.story import (
@@ -25,6 +26,7 @@ from kanberoo_core.schemas.story import (
     StoryTransitionRequest,
     StoryUpdate,
 )
+from kanberoo_core.schemas.tag import TagRead
 from kanberoo_core.services import stories as story_service
 from kanberoo_core.services import tags as tag_service
 
@@ -238,6 +240,27 @@ def soft_delete_story(
         expected_version=expected_version,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{story_id}/tags",
+    response_model=TagListResponse,
+)
+def list_tags_for_story(
+    story_id: str,
+    session: Session = Depends(get_session),
+    _actor: Actor = Depends(resolve_actor),
+) -> TagListResponse:
+    """
+    Return every live tag currently associated with ``story_id``,
+    alphabetised by name. 404 if the story is missing or soft-deleted.
+
+    Not paginated: in practice a single story carries a small, bounded
+    set of tags. No ``If-Match`` or ``ETag`` (tags do not carry a
+    version, per spec 3.3).
+    """
+    rows = tag_service.list_tags_for_story(session, story_id=story_id)
+    return TagListResponse(items=[TagRead.model_validate(row) for row in rows])
 
 
 @router.post(

@@ -179,6 +179,196 @@ describe('useEventStream', () => {
     expect(useAuthStore.getState().token).toBe(null);
   });
 
+  it('invalidates per-story keys on story.commented', async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    renderHook(() => useEventStream('ws-1'), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => socket.open());
+
+    act(() => {
+      socket.receive(
+        JSON.stringify({
+          event_id: 'evt-c1',
+          event_type: 'story.commented',
+          occurred_at: '2026-04-22T00:00:00Z',
+          actor_type: 'human',
+          actor_id: 'tok-1',
+          entity_type: 'story',
+          entity_id: 'st-9',
+          entity_version: 3,
+          payload: { workspace_id: 'ws-1', story_id: 'st-9' },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['comments', 'st-9'] });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-9'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['story', 'st-9'] });
+  });
+
+  it('invalidates comments and audit on comment.updated', async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    renderHook(() => useEventStream('ws-1'), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => socket.open());
+
+    act(() => {
+      socket.receive(
+        JSON.stringify({
+          event_id: 'evt-c2',
+          event_type: 'comment.updated',
+          occurred_at: '2026-04-22T00:00:00Z',
+          actor_type: 'human',
+          actor_id: 'tok-1',
+          entity_type: 'comment',
+          entity_id: 'c-1',
+          entity_version: 2,
+          payload: { story_id: 'st-7' },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['comments', 'st-7'] });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-7'] });
+  });
+
+  it('invalidates comments and audit on comment.deleted', async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    renderHook(() => useEventStream('ws-1'), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => socket.open());
+
+    act(() => {
+      socket.receive(
+        JSON.stringify({
+          event_id: 'evt-c3',
+          event_type: 'comment.deleted',
+          occurred_at: '2026-04-22T00:00:00Z',
+          actor_type: 'human',
+          actor_id: 'tok-1',
+          entity_type: 'comment',
+          entity_id: 'c-2',
+          entity_version: 3,
+          payload: { story_id: 'st-7' },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['comments', 'st-7'] });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-7'] });
+  });
+
+  it('invalidates story-tags, story, and audit on story.tag_added', async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    renderHook(() => useEventStream('ws-1'), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => socket.open());
+
+    act(() => {
+      socket.receive(
+        JSON.stringify({
+          event_id: 'evt-t1',
+          event_type: 'story.tag_added',
+          occurred_at: '2026-04-22T00:00:00Z',
+          actor_type: 'human',
+          actor_id: 'tok-1',
+          entity_type: 'story',
+          entity_id: 'st-5',
+          entity_version: 2,
+          payload: { workspace_id: 'ws-1', tag_id: 'tag-a' },
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['story-tags', 'st-5'] }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['story', 'st-5'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-5'] });
+  });
+
+  it('invalidates story-tags, story, and audit on story.tag_removed', async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    renderHook(() => useEventStream('ws-1'), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => socket.open());
+
+    act(() => {
+      socket.receive(
+        JSON.stringify({
+          event_id: 'evt-t2',
+          event_type: 'story.tag_removed',
+          occurred_at: '2026-04-22T00:00:00Z',
+          actor_type: 'human',
+          actor_id: 'tok-1',
+          entity_type: 'story',
+          entity_id: 'st-5',
+          entity_version: 3,
+          payload: { workspace_id: 'ws-1', tag_id: 'tag-a' },
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['story-tags', 'st-5'] }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['story', 'st-5'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-5'] });
+  });
+
+  it('invalidates the specific story key on story.updated', async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    renderHook(() => useEventStream('ws-1'), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => socket.open());
+
+    act(() => {
+      socket.receive(
+        JSON.stringify({
+          event_id: 'evt-u',
+          event_type: 'story.updated',
+          occurred_at: '2026-04-22T00:00:00Z',
+          actor_type: 'human',
+          actor_id: 'tok-1',
+          entity_type: 'story',
+          entity_id: 'st-3',
+          entity_version: 4,
+          payload: { workspace_id: 'ws-1' },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['story', 'st-3'] });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-3'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['stories', 'ws-1'] });
+  });
+
   it('invalidates workspace queries when a matching workspace event arrives', async () => {
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');

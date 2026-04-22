@@ -5,6 +5,7 @@ import { useAuthStore } from './state/auth';
 import AppHeader from './components/AppHeader';
 import Board from './routes/Board';
 import Login from './routes/Login';
+import StoryDetail from './routes/StoryDetail';
 import WorkspaceList from './routes/WorkspaceList';
 
 type RequireAuthProps = { children: ReactNode };
@@ -42,6 +43,7 @@ export default function App(): JSX.Element {
       >
         <Route path="/workspaces" element={<WorkspaceList />} />
         <Route path="/workspaces/:workspaceId/board" element={<Board />} />
+        <Route path="/stories/:storyId" element={<StoryDetail />} />
       </Route>
       <Route path="/" element={<Navigate to="/workspaces" replace />} />
       <Route path="*" element={<Navigate to="/workspaces" replace />} />
