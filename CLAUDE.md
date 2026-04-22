@@ -51,6 +51,23 @@ docker compose up -d
 docker compose logs -f kanberoo-api
 ```
 
+### Web UI development
+
+The `kanberoo-web` package ships a Vite + React SPA under `packages/kanberoo-web/frontend/`. The production build lives at `packages/kanberoo-web/src/kanberoo_web/dist/` and is committed so the wheel picks it up; only the built output, not the sources, needs to be in the wheel.
+
+```bash
+# Install Node deps + build the SPA into src/kanberoo_web/dist/
+make web-build
+
+# Run the Vite dev server (proxies /api and /api/v1/events to :8080)
+make web-dev
+
+# Run the frontend test suite (vitest, single-shot)
+make web-test
+```
+
+Node 20+ is required at build time. `make publish` does not yet rebuild the frontend automatically; that wiring lands in milestone M6.
+
 ## Repo Structure
 
 ```
