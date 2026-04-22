@@ -2,7 +2,7 @@
 
 > A kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP layer. Designed to be useful to humans on its own, and to integrate tightly with trusty-cage for AI-driven workflows.
 
-**Status:** Draft 2. Phase 1 open questions resolved 2026-04-17; ready for implementation.
+**Status:** Draft 2. Phase 1 shipped in v0.1.0 (2026-04-19). Phase 2 web UI shipped in v0.2.0 (2026-04-22).
 
 ---
 
@@ -699,9 +699,26 @@ Each phase is broken into PR-sized chunks that Claude Code can work through sequ
 
 **Exit criteria for phase 1**: You can run `kb server start`, create a workspace and stories through the TUI and CLI, have the outer Claude read and modify the board through MCP, and see all changes live in the TUI via WebSocket.
 
-### 9.2 Phase 2: Web UI (v0.6.0)
+### 9.2 Phase 2: Web UI (v0.2.0)
 
-Single-user web UI with the same views as the TUI. Stack TBD; likely htmx + server-side Jinja or a small React app. Decision deferred to end of phase one so we can use the final TUI as a design reference.
+Single-user web UI with the same views as the TUI. Shipped in v0.2.0. The stack is a Vite + React 19 + TypeScript SPA under `packages/kanberoo-web/frontend/`. `kanberoo-api` serves the built bundle at `/ui` via `StaticFiles` plus a path-traversal-safe catch-all that falls back to `index.html` for unknown paths; auth is token paste plus `localStorage`, same-origin only. Live updates reuse the existing WebSocket events stream (`/api/v1/events`) and invalidate the relevant react-query keys on story, comment, tag, and workspace events.
+
+Milestone scope:
+
+- M1: `/ui` mount, placeholder shell, `pipx install 'kanberoo[all]'` picks up the built bundle via the `web` optional extra.
+- M2: Vite + React 19 scaffold, react-query, zustand auth store, login screen with token paste.
+- M3: workspace list + create form, read-only kanban board shell.
+- M4: drag-to-transition on the board, WebSocket-driven invalidation, optimistic state moves.
+- M5: story detail (description, metadata, comments, tags, audit), edit form with If-Match, conflict modal.
+- M6: story creation modal, keyboard shortcuts (`n`, `/`, `e`, `?`, `Escape`), in-board search, accessibility pass (focus-visible ring, column aria-label with counts, draggable card aria-roledescription, modal focus traps).
+
+Deferred from phase 2 (possible phase 3+):
+
+- Global audit feed screen.
+- Linkage UI (creating/removing linkages from the web).
+- Epic list and epic detail screens.
+- Tag chips on board cards (blocked on a bulk tag-fetch endpoint; per-story fetch is too chatty).
+- Cross-workspace search.
 
 ### 9.3 Phase 3: Multi-user foundations (v0.7.0)
 
@@ -741,7 +758,7 @@ _No open questions for phase 1. All design questions from the initial draft were
 6. **Story templates** → deferred entirely from phase 1. No schema concessions.
 7. **Tag renaming in audit** → yes, surfaced in TUI audit view via the standard audit diff.
 8. **Default priority** → `none` everywhere (MCP and UI identical).
-9. **Web UI tech choice** → deferred to phase 2.
+9. **Web UI tech choice** → resolved in phase 2: Vite + React 19 + TypeScript SPA; `kanberoo-api` serves the built bundle at `/ui` (see section 9.2).
 10. **Backup strategy** → `kb backup` command added to phase 1 (milestone 10).
 
 New questions may be added here as they arise during implementation.

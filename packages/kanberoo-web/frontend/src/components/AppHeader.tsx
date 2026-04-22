@@ -1,8 +1,10 @@
-import type { JSX } from 'react';
+import { useCallback, useState, type JSX } from 'react';
 import { Link, Outlet, useMatch, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../state/auth';
 import { useStory } from '../queries/stories';
 import { useWorkspace } from '../queries/workspaces';
+import { useHotkey } from '../hooks/useHotkey';
+import KeyboardHelpModal from './KeyboardHelpModal';
 
 function WorkspaceCrumb({ workspaceId }: { workspaceId: string }): JSX.Element {
   const query = useWorkspace(workspaceId);
@@ -48,11 +50,18 @@ function Breadcrumbs(): JSX.Element | null {
 export default function AppHeader(): JSX.Element {
   const navigate = useNavigate();
   const clearToken = useAuthStore((s) => s.clearToken);
+  const [helpOpen, setHelpOpen] = useState(false);
 
-  function handleLogout(): void {
+  const handleLogout = (): void => {
     clearToken();
     navigate('/login', { replace: true });
-  }
+  };
+
+  const toggleHelp = useCallback(() => {
+    setHelpOpen((open) => !open);
+  }, []);
+
+  useHotkey('?', toggleHelp);
 
   return (
     <div className="app-frame">
@@ -63,13 +72,25 @@ export default function AppHeader(): JSX.Element {
           </Link>
           <Breadcrumbs />
         </div>
-        <button type="button" className="secondary" onClick={handleLogout}>
-          Log out
-        </button>
+        <div className="app-header-actions">
+          <button
+            type="button"
+            className="secondary icon-button"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            onClick={() => setHelpOpen(true)}
+          >
+            ?
+          </button>
+          <button type="button" className="secondary" onClick={handleLogout}>
+            Log out
+          </button>
+        </div>
       </header>
       <main className="app-main">
         <Outlet />
       </main>
+      {helpOpen ? <KeyboardHelpModal onClose={() => setHelpOpen(false)} /> : null}
     </div>
   );
 }

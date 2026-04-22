@@ -230,9 +230,27 @@ export default function TagManager({ storyId, workspaceId }: TagManagerProps): J
       <header className="tag-manager-header">
         <h3>Tags</h3>
       </header>
-      {storyTags.length === 0 ? (
+      {storyTagsQuery.isLoading ? (
+        <p className="muted small" aria-busy="true">
+          Loading tags...
+        </p>
+      ) : null}
+      {storyTagsQuery.isError ? (
+        <div role="alert">
+          <p className="error-text small">Could not load tags.</p>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => storyTagsQuery.refetch()}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {!storyTagsQuery.isLoading && !storyTagsQuery.isError && storyTags.length === 0 ? (
         <p className="muted small">No tags.</p>
-      ) : (
+      ) : null}
+      {!storyTagsQuery.isLoading && !storyTagsQuery.isError && storyTags.length > 0 ? (
         <ul className="tag-chip-row" aria-label="Story tags">
           {storyTags.map((tag) => (
             <li key={tag.id}>
@@ -240,11 +258,21 @@ export default function TagManager({ storyId, workspaceId }: TagManagerProps): J
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
       {mutationError ? (
-        <p className="error-text small" role="alert">
-          {mutationError.message}
-        </p>
+        <div role="alert" className="tag-manager-error">
+          <p className="error-text small">{mutationError.message}</p>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              addTags.reset();
+              removeTag.reset();
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
       ) : null}
       <div className="tag-manager-add">
         {pickerOpen ? (

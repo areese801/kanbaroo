@@ -1,6 +1,6 @@
 [project]
 name = "kanberoo"
-version = "0.1.0"
+version = "0.2.0"
 description = "A kanban-style issue tracker with TUI, REST + WebSocket API, CLI, and MCP server. Meta-package."
 readme = "README.md"
 requires-python = ">=3.12"

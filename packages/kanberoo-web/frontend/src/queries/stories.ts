@@ -171,6 +171,40 @@ export function useRemoveStoryTag(
   });
 }
 
+export type CreateStoryPayload = {
+  title: string;
+  description?: string | null;
+  priority?: StoryPriority;
+  epic_id?: string | null;
+  branch_name?: string | null;
+  commit_sha?: string | null;
+  pr_url?: string | null;
+};
+
+export function useCreateStory(
+  workspaceId: string | null | undefined,
+): UseMutationResult<Story, ApiError, CreateStoryPayload> {
+  const queryClient = useQueryClient();
+  return useMutation<Story, ApiError, CreateStoryPayload>({
+    mutationFn: async (payload) => {
+      const response = await apiRequest(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId as string)}/stories`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+      );
+      return (await response.json()) as Story;
+    },
+    onSuccess: () => {
+      if (workspaceId) {
+        queryClient.invalidateQueries({ queryKey: ['stories', workspaceId] });
+      }
+    },
+  });
+}
+
 export type TransitionStoryInput = {
   storyId: string;
   expectedVersion: number;

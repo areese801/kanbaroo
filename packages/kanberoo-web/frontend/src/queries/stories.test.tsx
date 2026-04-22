@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { useAuthStore } from '../state/auth';
 import {
   useAddStoryTags,
+  useCreateStory,
   useRemoveStoryTag,
   useStory,
   useTransitionStory,
@@ -257,6 +258,52 @@ describe('useUpdateStory', () => {
     const rolledBack = client.getQueryData<Story>(['story', 'st-6']);
     expect(rolledBack?.title).toBe('Stable');
     expect((result.current.error as ApiError | null)?.status).toBe(412);
+  });
+});
+
+describe('useCreateStory', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    useAuthStore.getState().setToken('kbr_test_token');
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    useAuthStore.getState().clearToken();
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs the payload and invalidates the workspace stories cache on success', async () => {
+    const created = makeStory({ id: 'st-new', human_id: 'KAN-99', title: 'Added' });
+    const client = makeClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      expect(url).toBe('/api/v1/workspaces/ws-1/stories');
+      expect((init?.method ?? 'GET').toUpperCase()).toBe('POST');
+      const headers = new Headers(init?.headers);
+      expect(headers.get('Content-Type')).toBe('application/json');
+      expect(init?.body).toBe(
+        JSON.stringify({ title: 'Added', priority: 'high' }),
+      );
+      return new Response(JSON.stringify(created), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useCreateStory('ws-1'), {
+      wrapper: makeWrapper(client),
+    });
+
+    result.current.mutate({ title: 'Added', priority: 'high' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.id).toBe('st-new');
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['stories', 'ws-1'] });
   });
 });
 
