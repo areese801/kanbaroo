@@ -1,10 +1,77 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
-import Board from './Board';
 import { useAuthStore } from '../state/auth';
 import { renderWithProviders } from '../test/render';
 import type { Story, Workspace } from '../types/api';
+
+type DragStartEvent = { active: { id: string; data: { current: unknown } } };
+type DragEndEvent = { active: { id: string; data: { current: unknown } }; over: { id: string } | null };
+type DragCancelEvent = Record<string, never>;
+
+type DragHandlers = {
+  onDragStart?: (e: DragStartEvent) => void;
+  onDragEnd?: (e: DragEndEvent) => void;
+  onDragCancel?: (e: DragCancelEvent) => void;
+};
+
+// Hoist the shared state so the vi.mock factory (which is itself hoisted)
+// can reach it.
+const { dndTestHooks } = vi.hoisted(() => {
+  return { dndTestHooks: { current: {} as DragHandlers } };
+});
+
+// Mock dnd-kit so the test can synthesize drag events without a real pointer
+// sensor. Tests capture the DndContext handlers via `dndTestHooks.current`
+// and call them directly. useDraggable / useDroppable / DragOverlay still
+// return realistic shapes so the Board renders its draggable markup and
+// drop-target styles without real DOM interaction.
+vi.mock('@dnd-kit/core', () => {
+  return {
+    DndContext: ({
+      children,
+      onDragStart,
+      onDragEnd,
+      onDragCancel,
+    }: {
+      children: ReactNode;
+      onDragStart?: (e: DragStartEvent) => void;
+      onDragEnd?: (e: DragEndEvent) => void;
+      onDragCancel?: (e: DragCancelEvent) => void;
+    }) => {
+      dndTestHooks.current = { onDragStart, onDragEnd, onDragCancel };
+      return children;
+    },
+    DragOverlay: () => null,
+    PointerSensor: class {},
+    useDraggable: ({ id, data }: { id: string; data: Record<string, unknown> }) => ({
+      attributes: { role: 'button', tabIndex: 0, 'aria-roledescription': 'draggable' },
+      listeners: {},
+      setNodeRef: () => {},
+      transform: null,
+      isDragging: false,
+      node: { current: null },
+      active: null,
+      over: null,
+      rect: { current: null },
+      _data: { id, data },
+    }),
+    useDroppable: ({ id }: { id: string }) => ({
+      isOver: false,
+      active: null,
+      node: { current: null },
+      over: null,
+      rect: { current: null },
+      setNodeRef: () => {},
+      _id: id,
+    }),
+    useSensor: () => ({}),
+    useSensors: () => [],
+  };
+});
+
+import Board from './Board';
 
 const WORKSPACE: Workspace = {
   id: 'ws-1',
@@ -36,14 +103,14 @@ function makeStory(overrides: Partial<Story>): Story {
     created_at: '2026-04-22T00:00:00Z',
     updated_at: '2026-04-22T00:00:00Z',
     deleted_at: null,
-    version: 1,
+    version: overrides.version ?? 1,
   };
 }
 
-type ResponseFactory = () => Response;
+type ResponseFactory = (input: RequestInfo | URL, init?: RequestInit) => Response;
 
 function fetchRouter(routes: Record<string, ResponseFactory>) {
-  return vi.fn(async (input: RequestInfo | URL) => {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     for (const prefix of Object.keys(routes)) {
       if (url.startsWith(prefix)) {
@@ -51,7 +118,7 @@ function fetchRouter(routes: Record<string, ResponseFactory>) {
         if (!factory) {
           throw new Error(`No factory for ${prefix}`);
         }
-        return factory();
+        return factory(input, init);
       }
     }
     throw new Error(`Unexpected fetch: ${url}`);
@@ -67,11 +134,40 @@ function renderBoard() {
   );
 }
 
+function simulateDropOn(
+  storyId: string,
+  fromState: Story['state'],
+  version: number,
+  targetState: Story['state'],
+): void {
+  // Re-read the handlers between calls: each render of Board captures a new
+  // closure over `activeCard`, so we must pick up the latest after onDragStart
+  // has queued the state update.
+  act(() => {
+    dndTestHooks.current.onDragStart?.({
+      active: {
+        id: `story-${storyId}`,
+        data: { current: { storyId, fromState, version } },
+      },
+    });
+  });
+  act(() => {
+    dndTestHooks.current.onDragEnd?.({
+      active: {
+        id: `story-${storyId}`,
+        data: { current: { storyId, fromState, version } },
+      },
+      over: { id: `column-${targetState}` },
+    });
+  });
+}
+
 describe('Board', () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     useAuthStore.getState().setToken('kbr_test_token');
+    dndTestHooks.current = {};
   });
 
   afterEach(() => {
@@ -235,5 +331,109 @@ describe('Board', () => {
       expect(screen.getByText(/could not load stories/i)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it('dragging a todo story into the In progress column fires the transition mutation with If-Match', async () => {
+    const story = makeStory({
+      id: 'st-42',
+      human_id: 'KAN-42',
+      title: 'Shippable',
+      state: 'todo',
+      version: 3,
+    });
+    const updated = { ...story, state: 'in_progress' as const, version: 4 };
+
+    const postCalls: { url: string; headers: Headers; body: string | null }[] = [];
+    let storiesResponse: Story[] = [story];
+
+    globalThis.fetch = fetchRouter({
+      '/api/v1/stories/st-42/transition': (_input, init) => {
+        const headers = new Headers(init?.headers);
+        const body = typeof init?.body === 'string' ? init.body : null;
+        postCalls.push({
+          url: '/api/v1/stories/st-42/transition',
+          headers,
+          body,
+        });
+        storiesResponse = [updated];
+        return new Response(JSON.stringify(updated), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ETag: '4' },
+        });
+      },
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: storiesResponse, next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    expect(await screen.findByText('KAN-42')).toBeInTheDocument();
+
+    simulateDropOn('st-42', 'todo', 3, 'in_progress');
+
+    await waitFor(() => {
+      expect(postCalls.length).toBeGreaterThan(0);
+    });
+    const call = postCalls[0]!;
+    expect(call.headers.get('If-Match')).toBe('3');
+    expect(call.headers.get('Content-Type')).toBe('application/json');
+    expect(call.body).toBe(JSON.stringify({ to_state: 'in_progress' }));
+  });
+
+  it('dragging a backlog story onto Done shows the cannot-move banner and does not POST', async () => {
+    const story = makeStory({
+      id: 'st-backlog',
+      human_id: 'KAN-9',
+      title: 'Stay backlog',
+      state: 'backlog',
+      version: 2,
+    });
+    const postCalls: string[] = [];
+
+    globalThis.fetch = fetchRouter({
+      '/api/v1/stories/': (input) => {
+        postCalls.push(typeof input === 'string' ? input : input.toString());
+        return new Response('{}', { status: 200 });
+      },
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: [story], next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    expect(await screen.findByText('KAN-9')).toBeInTheDocument();
+
+    simulateDropOn('st-backlog', 'backlog', 2, 'done');
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/cannot move a backlog story to done\./i),
+      ).toBeInTheDocument();
+    });
+    expect(postCalls).toHaveLength(0);
   });
 });
