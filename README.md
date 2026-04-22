@@ -2,13 +2,14 @@
 
 A kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP server. Designed to be useful standalone, and to integrate with [trusty-cage](https://pypi.org/project/trusty-cage/) for AI-driven workflows.
 
-**Status:** Phase 1 complete. Single-user, terminal + AI, no web UI yet.
+**Status:** Phase 2 complete. Single-user, terminal + web + AI.
 
 ## What it does
 
-Kanberoo exposes the same data through four surfaces:
+Kanberoo exposes the same data through five surfaces:
 
 - **TUI** (Textual) for terminal-centric humans: workspace list, kanban board, story detail, fuzzy search, audit feed.
+- **Web UI** (React SPA, served by the API at `/ui`): workspace list, kanban board with drag-to-transition, story detail, comments, tags, live WebSocket updates, keyboard shortcuts.
 - **CLI** (Typer + Rich): scriptable access to every resource, JSON output for pipelines.
 - **REST + WebSocket API** (FastAPI): the source of truth. WebSocket feeds live change events; REST is always authoritative.
 - **MCP server**: lets AI agents (outer Claude in particular) read and write the board through the Model Context Protocol.
@@ -108,6 +109,32 @@ uv run kanberoo-tui
 ```
 
 Press `?` on any TUI screen for the keybinding cheatsheet. Press `/` from the workspace list or board for fuzzy search. `a` opens the global audit feed.
+
+## Web UI
+
+The `kanberoo-web` package ships a Vite + React SPA that `kanberoo-api` serves at `/ui`. Once the API is running, visit `http://localhost:8080/ui` in a browser.
+
+Login is token-paste: create a token (`kb token create --actor-type human --actor-id you --name "web"`) and paste it into the login form. The token is stored in `localStorage` under `kanberoo.token`; press "Log out" to clear it.
+
+Shipped in v0.2.0:
+
+- Workspace list with inline create.
+- Kanban board with drag-to-transition, illegal-move rejection, optimistic updates.
+- Story detail: markdown description, metadata, comments (with one-level replies), tags, audit trail.
+- Live updates via the existing `/api/v1/events` WebSocket.
+- Story creation modal (`n` on the board).
+- In-board search (`/` on the board; matches on human id prefix and title substring).
+- Keyboard shortcuts: `n` new story, `/` search, `e` edit story, `?` shortcut help, `Escape` close modal / clear search / exit edit mode.
+
+The release wheel auto-includes the built bundle, so `pipx install --include-deps 'kanberoo[all]'` picks up the UI. Node 20+ is only required at build time for maintainers publishing a new release.
+
+### Developing the web UI
+
+```bash
+make web-build   # Build the SPA into packages/kanberoo-web/src/kanberoo_web/dist/
+make web-dev     # Vite dev server on :5173, proxies /api and /api/v1/events to :8080
+make web-test    # vitest, single-shot
+```
 
 ## MCP setup
 

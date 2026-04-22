@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type JSX } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type JSX } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
@@ -8,6 +8,7 @@ import CommentComposer from '../components/CommentComposer';
 import CommentThread from '../components/CommentThread';
 import TagManager from '../components/TagManager';
 import { useEventStream } from '../hooks/useEventStream';
+import { useHotkey } from '../hooks/useHotkey';
 import {
   useCreateComment,
   useDeleteComment,
@@ -353,9 +354,29 @@ export default function StoryDetail(): JSX.Element {
     }
   }, [story, editing]);
 
+  const handleEnterEdit = useCallback((): void => {
+    if (!story || editing) {
+      return;
+    }
+    setForm(initialFormState(story));
+    setSaveError(null);
+    setEditing(true);
+  }, [story, editing]);
+
+  const handleExitEdit = useCallback((): void => {
+    setEditing(false);
+    setSaveError(null);
+  }, []);
+
+  useHotkey('e', handleEnterEdit, { enabled: !editing && !!story });
+  useHotkey('Escape', handleExitEdit, {
+    enabled: editing && !showConflict,
+    allowInInputs: true,
+  });
+
   if (storyQuery.isLoading || !story) {
     return (
-      <section className="story-detail">
+      <section className="story-detail" aria-busy="true">
         <p className="muted">Loading story...</p>
       </section>
     );
@@ -363,9 +384,12 @@ export default function StoryDetail(): JSX.Element {
   if (storyQuery.isError) {
     return (
       <section className="story-detail">
-        <p className="error-text" role="alert">
-          Could not load story.
-        </p>
+        <div className="error-panel" role="alert">
+          <p className="error-text">Could not load story.</p>
+          <button type="button" onClick={() => storyQuery.refetch()}>
+            Retry
+          </button>
+        </div>
       </section>
     );
   }
@@ -382,17 +406,6 @@ export default function StoryDetail(): JSX.Element {
   const epicLabel = epicForStory
     ? `${epicForStory.human_id} ${epicForStory.title}`
     : null;
-
-  const handleEdit = (): void => {
-    setForm(initialFormState(story));
-    setSaveError(null);
-    setEditing(true);
-  };
-
-  const handleCancel = (): void => {
-    setEditing(false);
-    setSaveError(null);
-  };
 
   const handleChange = (update: Partial<EditFormState>): void => {
     setForm((prev) => (prev ? { ...prev, ...update } : prev));
@@ -489,7 +502,7 @@ export default function StoryDetail(): JSX.Element {
               form={form}
               onChange={handleChange}
               onSubmit={handleSubmit}
-              onCancel={handleCancel}
+              onCancel={handleExitEdit}
               busy={updateStory.isPending}
               errorMessage={saveError}
             />
@@ -497,18 +510,37 @@ export default function StoryDetail(): JSX.Element {
             <DisplayMode
               story={story}
               epicLabel={epicLabel}
-              onEdit={handleEdit}
+              onEdit={handleEnterEdit}
             />
           )}
           <section className="story-comments" aria-label="Comments">
             <h2>Comments</h2>
-            <CommentThread
-              comments={comments}
-              conflictCommentId={commentConflictId}
-              onReply={handleReply}
-              onEdit={handleEditComment}
-              onDelete={handleDeleteComment}
-            />
+            {commentsQuery.isLoading ? (
+              <p className="muted small" aria-busy="true">
+                Loading comments...
+              </p>
+            ) : null}
+            {commentsQuery.isError ? (
+              <div role="alert">
+                <p className="error-text small">Could not load comments.</p>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => commentsQuery.refetch()}
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+            {!commentsQuery.isLoading && !commentsQuery.isError ? (
+              <CommentThread
+                comments={comments}
+                conflictCommentId={commentConflictId}
+                onReply={handleReply}
+                onEdit={handleEditComment}
+                onDelete={handleDeleteComment}
+              />
+            ) : null}
             <CommentComposer
               submitLabel="Post"
               onSubmit={handleCreateComment}

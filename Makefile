@@ -2,8 +2,12 @@
 
 # Kanberoo is a uv workspace monorepo. `uv build --all-packages`
 # builds every workspace member (kanberoo-core, kanberoo-api,
-# kanberoo-cli, kanberoo-tui, kanberoo-mcp) plus the top-level
-# `kanberoo` meta-package into dist/.
+# kanberoo-cli, kanberoo-tui, kanberoo-mcp, kanberoo-web) plus the
+# top-level `kanberoo` meta-package into dist/.
+#
+# `make publish` runs `web-build` first so the release wheel carries
+# fresh JS/CSS. `make build` skips the frontend step so dev iteration
+# stays fast; use `make web-build` explicitly when you need the SPA.
 #
 # Publishing uses `uv publish`, which reads UV_PUBLISH_TOKEN from
 # the environment (see set_creds.sh for the canonical source).
@@ -17,7 +21,7 @@ sync: ## Sync the workspace venv with all packages and dev deps
 build: clean ## Build wheels and sdists for every workspace member into dist/
 	uv build --all-packages --out-dir dist/
 
-publish: build ## Build, upload all dist/ artifacts to PyPI, and push a v<version> git tag
+publish: web-build build ## Rebuild the SPA, build wheels, upload to PyPI, and push a v<version> git tag
 	. ./set_creds.sh && uv publish dist/*
 	$(MAKE) tag
 

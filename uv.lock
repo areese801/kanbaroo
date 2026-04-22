@@ -396,7 +396,7 @@ wheels = [
 
 [[package]]
 name = "kanberoo"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -440,7 +440,7 @@ dev = [
 
 [[package]]
 name = "kanberoo-api"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/kanberoo-api" }
 dependencies = [
     { name = "fastapi" },
@@ -466,7 +466,7 @@ provides-extras = ["web"]
 
 [[package]]
 name = "kanberoo-cli"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/kanberoo-cli" }
 dependencies = [
     { name = "httpx" },
@@ -485,7 +485,7 @@ requires-dist = [
 
 [[package]]
 name = "kanberoo-core"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/kanberoo-core" }
 dependencies = [
     { name = "alembic" },
@@ -506,7 +506,7 @@ requires-dist = [
 
 [[package]]
 name = "kanberoo-mcp"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/kanberoo-mcp" }
 dependencies = [
     { name = "anyio" },
@@ -525,7 +525,7 @@ requires-dist = [
 
 [[package]]
 name = "kanberoo-tui"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/kanberoo-tui" }
 dependencies = [
     { name = "httpx" },

@@ -136,13 +136,24 @@ export default function AuditTrail({ storyId }: AuditTrailProps): JSX.Element {
   const query = useStoryAudit(storyId);
 
   if (query.isLoading) {
-    return <p className="muted small">Loading audit trail...</p>;
+    return (
+      <section className="audit-trail" aria-busy="true">
+        <p className="muted small">Loading audit trail...</p>
+      </section>
+    );
   }
   if (query.isError) {
     return (
-      <p className="error-text small" role="alert">
-        Could not load audit trail.
-      </p>
+      <section className="audit-trail" role="alert">
+        <p className="error-text small">Could not load audit trail.</p>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => query.refetch()}
+        >
+          Retry
+        </button>
+      </section>
     );
   }
   const events = query.data ?? [];

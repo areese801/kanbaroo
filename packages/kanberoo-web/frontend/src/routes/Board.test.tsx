@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { useAuthStore } from '../state/auth';
 import { renderWithProviders } from '../test/render';
@@ -207,19 +208,19 @@ describe('Board', () => {
 
     expect(await screen.findByText('KAN-1')).toBeInTheDocument();
 
-    const backlog = screen.getByRole('region', { name: 'Backlog' });
-    const todo = screen.getByRole('region', { name: 'To do' });
-    const inProgress = screen.getByRole('region', { name: 'In progress' });
-    const inReview = screen.getByRole('region', { name: 'In review' });
-    const done = screen.getByRole('region', { name: 'Done' });
+    const backlog = screen.getByRole('region', { name: /^Backlog,/ });
+    const todo = screen.getByRole('region', { name: /^To do,/ });
+    const inProgress = screen.getByRole('region', { name: /^In progress,/ });
+    const inReview = screen.getByRole('region', { name: /^In review,/ });
+    const done = screen.getByRole('region', { name: /^Done,/ });
 
     const columns = screen.getAllByRole('region');
     expect(columns.map((c) => c.getAttribute('aria-label'))).toEqual([
-      'Backlog',
-      'To do',
-      'In progress',
-      'In review',
-      'Done',
+      'Backlog, 2 stories',
+      'To do, 1 story',
+      'In progress, 1 story',
+      'In review, 0 stories',
+      'Done, 1 story',
     ]);
 
     expect(within(backlog).getByText('(2)')).toBeInTheDocument();
@@ -261,7 +262,7 @@ describe('Board', () => {
     renderBoard();
 
     expect(await screen.findByText('KAN-42')).toBeInTheDocument();
-    const inProgress = screen.getByRole('region', { name: 'In progress' });
+    const inProgress = screen.getByRole('region', { name: /^In progress,/ });
     expect(within(inProgress).getByText('KAN-42')).toBeInTheDocument();
     expect(within(inProgress).getByText('Ship the thing')).toBeInTheDocument();
     expect(within(inProgress).getByText('High')).toBeInTheDocument();
@@ -298,7 +299,7 @@ describe('Board', () => {
     renderBoard();
 
     expect(await screen.findByText('Quiet story')).toBeInTheDocument();
-    const todo = screen.getByRole('region', { name: 'To do' });
+    const todo = screen.getByRole('region', { name: /^To do,/ });
     expect(within(todo).getByText('Quiet story')).toBeInTheDocument();
     expect(within(todo).queryByText('Low')).not.toBeInTheDocument();
     expect(within(todo).queryByText('Medium')).not.toBeInTheDocument();
@@ -390,6 +391,168 @@ describe('Board', () => {
     expect(call.headers.get('If-Match')).toBe('3');
     expect(call.headers.get('Content-Type')).toBe('application/json');
     expect(call.body).toBe(JSON.stringify({ to_state: 'in_progress' }));
+  });
+
+  it('pressing "n" opens the story-create modal', async () => {
+    const story = makeStory({ id: 'st-1', human_id: 'KAN-1', state: 'backlog' });
+    globalThis.fetch = fetchRouter({
+      '/api/v1/workspaces/ws-1/epics': () =>
+        new Response(JSON.stringify({ items: [], next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: [story], next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    await screen.findByText('KAN-1');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n' }));
+    });
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: /new story/i })).toBeInTheDocument();
+  });
+
+  it('pressing "/" focuses the search input; typing filters visible cards', async () => {
+    const stories: Story[] = [
+      makeStory({ id: 'a', human_id: 'KAN-1', title: 'Shippable', state: 'backlog' }),
+      makeStory({ id: 'b', human_id: 'KAN-2', title: 'Research', state: 'backlog' }),
+    ];
+
+    globalThis.fetch = fetchRouter({
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: stories, next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    await screen.findByText('KAN-1');
+    await screen.findByText('Shippable');
+    expect(screen.getByText('Research')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '/' }));
+    });
+
+    const input = await screen.findByRole('searchbox', { name: /search stories/i });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(input);
+    });
+
+    await userEvent.type(input, 'ship');
+    await waitFor(() => {
+      expect(screen.queryByText('Research')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Shippable')).toBeInTheDocument();
+  });
+
+  it('Escape clears and hides the board search', async () => {
+    const stories: Story[] = [
+      makeStory({ id: 'a', human_id: 'KAN-1', title: 'Shippable', state: 'backlog' }),
+      makeStory({ id: 'b', human_id: 'KAN-2', title: 'Research', state: 'backlog' }),
+    ];
+
+    globalThis.fetch = fetchRouter({
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: stories, next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    await screen.findByText('KAN-1');
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '/' }));
+    });
+    const input = await screen.findByRole('searchbox', { name: /search stories/i });
+    await userEvent.type(input, 'ship');
+
+    act(() => {
+      fireEvent.keyDown(input, { key: 'Escape' });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('searchbox', { name: /search stories/i })).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Research')).toBeInTheDocument();
+  });
+
+  it('story cards carry aria-label and aria-roledescription so screen readers announce drag', async () => {
+    const story = makeStory({
+      id: 'st-a11y',
+      human_id: 'KAN-50',
+      title: 'Accessible',
+      state: 'todo',
+      priority: 'high',
+    });
+
+    globalThis.fetch = fetchRouter({
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: [story], next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    await screen.findByText('KAN-50');
+
+    const card = screen.getByText('Accessible').closest('article');
+    expect(card).not.toBeNull();
+    expect(card).toHaveAttribute('aria-roledescription', 'draggable story');
+    expect(card).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('KAN-50'),
+    );
   });
 
   it('dragging a backlog story onto Done shows the cannot-move banner and does not POST', async () => {
