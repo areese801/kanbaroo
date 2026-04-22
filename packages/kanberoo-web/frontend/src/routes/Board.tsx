@@ -179,7 +179,6 @@ function Column({
     >
       <header className="board-column-header">
         <span className="board-column-title">{label}</span>
-        <span className="board-column-count">({stories.length})</span>
       </header>
       <div className="board-column-body">
         {loadingHint ? <p className="muted small">Loading stories...</p> : null}
