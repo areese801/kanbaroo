@@ -13,11 +13,15 @@ dependencies = [
     "websockets>=12.0",
 ]
 
+[project.optional-dependencies]
+web = ["kanberoo-web"]
+
 [project.scripts]
 kanberoo-api = "kanberoo_api.server:run"
 
 [tool.uv.sources]
 kanberoo-core = { workspace = true }
+kanberoo-web = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

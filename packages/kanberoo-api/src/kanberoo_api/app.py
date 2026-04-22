@@ -5,11 +5,17 @@ FastAPI application factory.
 dependency, exception handlers, and routers mounted under
 ``/api/v1``. The factory is the single public entry point for both the
 uvicorn server and the test suite so the two paths cannot drift.
+
+When the optional ``kanberoo-web`` package is installed (via the
+``kanberoo-api[web]`` extra) the app also serves the bundled web UI at
+``/ui`` with an SPA fallback. If the package is not installed the route
+is silently skipped and the API still serves normally.
 """
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 from kanberoo_api.db import configure_engine
 from kanberoo_api.errors import register_exception_handlers
@@ -24,7 +30,13 @@ from kanberoo_api.routers import tags as tags_router
 from kanberoo_api.routers import tokens as tokens_router
 from kanberoo_api.routers import workspaces as workspaces_router
 
+try:
+    from kanberoo_web import web_assets_path as _web_assets_path
+except ImportError:
+    _web_assets_path = None  # type: ignore[assignment]
+
 API_PREFIX = "/api/v1"
+UI_PREFIX = "/ui"
 
 
 def create_app(*, database_url: str | None = None) -> FastAPI:
@@ -70,4 +82,39 @@ def create_app(*, database_url: str | None = None) -> FastAPI:
     app.include_router(tokens_router.router, prefix=API_PREFIX)
     app.include_router(events_ws_router.router, prefix=API_PREFIX)
 
+    if _web_assets_path is not None:
+        _mount_web_ui(app)
+
     return app
+
+
+def _mount_web_ui(app: FastAPI) -> None:
+    """
+    Register the ``/ui`` catch-all that serves the kanberoo-web bundle.
+
+    A single ``GET /ui/{path:path}`` handler resolves the requested path
+    against the bundled assets directory and returns the file when one
+    exists. Requests whose resolved path escapes the assets directory
+    (path traversal) are treated as unknown routes and fall back to
+    ``index.html`` so the SPA router can render them; the attempted path
+    is not echoed back. Any unmatched in-bounds path also falls back to
+    ``index.html`` for the same reason.
+    """
+    assert _web_assets_path is not None
+    assets_dir = _web_assets_path()
+    root = assets_dir.resolve()
+    index_html = root / "index.html"
+
+    @app.get(f"{UI_PREFIX}/{{path:path}}", include_in_schema=False)
+    async def web_ui(path: str) -> FileResponse:
+        if path:
+            resolved = (assets_dir / path).resolve()
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                resolved = index_html
+            if resolved != index_html and resolved.is_file():
+                return FileResponse(resolved)
+        if index_html.is_file():
+            return FileResponse(index_html)
+        raise HTTPException(status_code=404, detail="web assets not found")
