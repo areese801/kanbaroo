@@ -25,6 +25,10 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+# Exception: kanberoo-web ships its static bundle under src/.../dist/ and
+# must be tracked so the wheel picks it up.
+!packages/kanberoo-web/src/kanberoo_web/dist/
+!packages/kanberoo-web/src/kanberoo_web/dist/**
 
 # Don't track virtual environment subdirectories
 virtualenv/
