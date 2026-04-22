@@ -2,8 +2,10 @@ import { useEffect, type JSX, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { setUnauthorizedHandler } from './api/client';
 import { useAuthStore } from './state/auth';
-import Home from './routes/Home';
+import AppHeader from './components/AppHeader';
+import Board from './routes/Board';
 import Login from './routes/Login';
+import WorkspaceList from './routes/WorkspaceList';
 
 type RequireAuthProps = { children: ReactNode };
 
@@ -32,14 +34,17 @@ export default function App(): JSX.Element {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
-        path="/"
         element={
           <RequireAuth>
-            <Home />
+            <AppHeader />
           </RequireAuth>
         }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      >
+        <Route path="/workspaces" element={<WorkspaceList />} />
+        <Route path="/workspaces/:workspaceId/board" element={<Board />} />
+      </Route>
+      <Route path="/" element={<Navigate to="/workspaces" replace />} />
+      <Route path="*" element={<Navigate to="/workspaces" replace />} />
     </Routes>
   );
 }
