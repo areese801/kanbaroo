@@ -21,6 +21,7 @@ from kanberoo_cli.config import (
     ConfigMalformedError,
     ConfigNotFoundError,
     load_config,
+    load_config_api_only,
 )
 
 ClientFactory = Callable[[CliConfig], ApiClient]
@@ -37,6 +38,28 @@ def require_config() -> CliConfig:
     """
     try:
         return load_config()
+    except ConfigNotFoundError as exc:
+        _stderr_console.print(
+            f"[red]Error:[/red] no Kanberoo config at {exc.path}.\n"
+            "Run [bold]kb init[/bold] to create one."
+        )
+        raise typer.Exit(code=1) from exc
+    except ConfigMalformedError as exc:
+        _stderr_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+def require_config_api_only() -> CliConfig:
+    """
+    Like :func:`require_config` but does not demand ``database_url``.
+
+    For commands that only hit the HTTP API (e.g.
+    ``kb server start --wait``). The returned
+    :class:`CliConfig.database_url` may be ``None``; the caller must
+    not dereference it.
+    """
+    try:
+        return load_config_api_only()
     except ConfigNotFoundError as exc:
         _stderr_console.print(
             f"[red]Error:[/red] no Kanberoo config at {exc.path}.\n"

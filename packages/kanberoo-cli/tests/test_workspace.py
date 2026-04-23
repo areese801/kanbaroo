@@ -393,3 +393,122 @@ def test_story_list_without_workspace_errors_cleanly(
     assert "--workspace" in combined
     assert "KANBEROO_WORKSPACE" in combined
     del config_dir
+
+
+def test_workspace_delete_by_key_with_yes_flag(
+    mock_api: Any,
+    config_dir: Path,
+    runner: CliRunner,
+) -> None:
+    """
+    ``workspace delete KAN --yes`` resolves by key, then issues the
+    DELETE with the ETag from the prior GET and skips the prompt.
+    """
+    del config_dir
+    ws = _ws_body("KAN")
+    mock_api.json(
+        "GET",
+        "/workspaces/by-key/KAN",
+        body=ws,
+        headers={"etag": "1"},
+    )
+    mock_api.json(
+        "GET",
+        f"/workspaces/{ws['id']}",
+        body=ws,
+        headers={"etag": "1"},
+    )
+
+    def _delete(_request: Any) -> Any:
+        import httpx
+
+        return httpx.Response(204)
+
+    mock_api.add("DELETE", f"/workspaces/{ws['id']}", _delete)
+    result = runner.invoke(app, ["workspace", "delete", "KAN", "--yes"])
+    assert result.exit_code == 0, result.stderr
+    delete_reqs = [r for r in mock_api.requests if r.method == "DELETE"]
+    assert delete_reqs
+    assert delete_reqs[0].path == f"/workspaces/{ws['id']}"
+    assert delete_reqs[0].headers["if-match"] == "1"
+    assert "soft-deleted" in result.stdout.lower()
+
+
+def test_workspace_delete_by_uuid_with_yes_flag(
+    mock_api: Any,
+    config_dir: Path,
+    runner: CliRunner,
+) -> None:
+    """
+    Passing the raw UUID short-circuits the by-key fallback but still
+    lands at the same DELETE path.
+    """
+    del config_dir
+    ws = _ws_body("KAN")
+    mock_api.json(
+        "GET",
+        f"/workspaces/{ws['id']}",
+        body=ws,
+        headers={"etag": "1"},
+    )
+
+    def _delete(_request: Any) -> Any:
+        import httpx
+
+        return httpx.Response(204)
+
+    mock_api.add("DELETE", f"/workspaces/{ws['id']}", _delete)
+    result = runner.invoke(
+        app,
+        ["workspace", "delete", str(ws["id"]), "--yes"],
+    )
+    assert result.exit_code == 0, result.stderr
+    delete_reqs = [r for r in mock_api.requests if r.method == "DELETE"]
+    assert delete_reqs
+    assert delete_reqs[0].path == f"/workspaces/{ws['id']}"
+
+
+def test_workspace_delete_prompt_rejection_aborts(
+    mock_api: Any,
+    config_dir: Path,
+    runner: CliRunner,
+) -> None:
+    """
+    Answering 'n' to the confirm prompt exits cleanly (0) and never
+    fires the DELETE request.
+    """
+    del config_dir
+    ws = _ws_body("KAN")
+    mock_api.json(
+        "GET",
+        "/workspaces/by-key/KAN",
+        body=ws,
+        headers={"etag": "1"},
+    )
+    result = runner.invoke(app, ["workspace", "delete", "KAN"], input="n\n")
+    assert result.exit_code == 0
+    assert "aborted" in result.stdout.lower()
+    assert not any(r.method == "DELETE" for r in mock_api.requests)
+
+
+def test_workspace_delete_not_found_exits_nonzero(
+    mock_api: Any,
+    config_dir: Path,
+    runner: CliRunner,
+) -> None:
+    """
+    A 404 from the resolver exits 1 with the server's error surfaced
+    on stderr and no DELETE ever fired.
+    """
+    del config_dir
+    mock_api.error(
+        "GET",
+        "/workspaces/by-key/WAT",
+        status_code=404,
+        code="not_found",
+        message="workspace WAT not found",
+    )
+    result = runner.invoke(app, ["workspace", "delete", "WAT", "--yes"])
+    assert result.exit_code == 1
+    assert "not_found" in result.stderr
+    assert not any(r.method == "DELETE" for r in mock_api.requests)

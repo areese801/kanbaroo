@@ -125,7 +125,7 @@ function DisplayMode({ story, epicLabel, onEdit }: DisplayModeProps): JSX.Elemen
               </span>
             </span>
           ) : null}
-          <button type="button" className="secondary" onClick={onEdit}>
+          <button type="button" className="primary" onClick={onEdit}>
             Edit
           </button>
         </div>

@@ -204,4 +204,4 @@ uv run pytest
 
 ## License
 
-MIT.
+MIT. See [`LICENSE`](./LICENSE).

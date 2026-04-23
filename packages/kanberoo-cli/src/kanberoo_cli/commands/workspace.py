@@ -207,6 +207,41 @@ def use_workspace(
     )
 
 
+@app.command("delete")
+def delete_workspace(
+    key_or_id: str = typer.Argument(..., help="Workspace key (KAN) or UUID."),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Skip the confirmation prompt.",
+    ),
+) -> None:
+    """
+    Soft-delete a workspace. Prompts for confirmation unless ``--yes``.
+    """
+    config = require_config()
+    with build_client(config) as client:
+        try:
+            workspace = resolve_workspace(client, key_or_id)
+        except ApiRequestError as exc:
+            exit_on_api_error(exc)
+        except ApiError as exc:
+            exit_on_api_error(exc)
+        if not yes:
+            confirmed = typer.confirm(
+                f"Soft-delete workspace {workspace['key']} ({workspace['name']!r})?"
+            )
+            if not confirmed:
+                stdout_console.print("aborted.")
+                raise typer.Exit(code=0)
+        try:
+            client.delete_with_etag(f"/workspaces/{workspace['id']}")
+        except ApiError as exc:
+            exit_on_api_error(exc)
+
+    stdout_console.print(f"soft-deleted [bold]{workspace['key']}[/bold].")
+
+
 @app.command("current")
 def current_workspace() -> None:
     """

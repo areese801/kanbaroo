@@ -8,6 +8,9 @@ pattern established when only ``kb init`` existed and keeps the help
 output consistent as new commands arrive.
 """
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
 import typer
 
 from kanberoo_cli.commands import audit as audit_command
@@ -20,6 +23,7 @@ from kanberoo_cli.commands import story as story_command
 from kanberoo_cli.commands import tag as tag_command
 from kanberoo_cli.commands import token as token_command
 from kanberoo_cli.commands import workspace as workspace_command
+from kanberoo_cli.rendering import stdout_console
 
 app = typer.Typer(
     name="kanberoo",
@@ -29,12 +33,53 @@ app = typer.Typer(
 )
 
 
+def _installed_version() -> str:
+    """
+    Return the installed ``kanberoo-cli`` version, or ``"unknown"`` when
+    the package is not installed (e.g. running directly from source
+    without an editable install).
+    """
+    try:
+        return _pkg_version("kanberoo-cli")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _version_callback(value: bool) -> None:
+    """
+    Eager Typer option callback for ``--version``. Prints the installed
+    version and exits cleanly before any subcommand runs.
+    """
+    if value:
+        stdout_console.print(_installed_version())
+        raise typer.Exit(code=0)
+
+
 @app.callback()
-def _root() -> None:
+def _root(
+    _version: bool = typer.Option(
+        False,
+        "--version",
+        help="Print the installed kanberoo-cli version and exit.",
+        is_eager=True,
+        callback=_version_callback,
+    ),
+) -> None:
     """
     Root callback. Exists only so Typer treats registered commands as
-    subcommands; it has no side effects.
+    subcommands; it also wires the ``--version`` option.
     """
+
+
+@app.command(
+    name="version",
+    help="Print the installed kanberoo-cli version.",
+)
+def version_command() -> None:
+    """
+    Print the installed kanberoo-cli version. Mirrors ``kb --version``.
+    """
+    stdout_console.print(_installed_version())
 
 
 app.command(

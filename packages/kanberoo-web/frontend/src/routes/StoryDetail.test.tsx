@@ -154,6 +154,14 @@ describe('StoryDetail', () => {
     expect(prLink).toHaveAttribute('target', '_blank');
   });
 
+  it('renders the Edit button with the primary class so it stands out from chrome', async () => {
+    globalThis.fetch = baseRouter() as unknown as typeof fetch;
+    renderDetail();
+
+    const editButton = await screen.findByRole('button', { name: 'Edit' });
+    expect(editButton).toHaveClass('primary');
+  });
+
   it('clicking Edit then Save PATCHes the story and returns to display mode', async () => {
     const patchBodies: string[] = [];
     let currentStory: Story = STORY;

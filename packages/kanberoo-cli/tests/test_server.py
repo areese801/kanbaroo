@@ -113,3 +113,42 @@ def test_server_start_failure_surfaces_exit_code(
     result = runner.invoke(app, ["server", "start"])
     assert result.exit_code == 2
     assert "docker compose up failed" in result.stderr
+
+
+def test_server_start_wait_without_database_url_in_config(
+    monkeypatch: pytest.MonkeyPatch,
+    runner: CliRunner,
+    tmp_path: Path,
+) -> None:
+    """
+    ``kb server start --wait`` only needs ``api_url`` + ``token``. A
+    ``config.toml`` missing ``database_url`` must not blow up on the
+    wait path; the HTTP probe is all that runs.
+    """
+    monkeypatch.setenv("KANBEROO_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("KANBEROO_API_URL", raising=False)
+    monkeypatch.delenv("KANBEROO_TOKEN", raising=False)
+    monkeypatch.delenv("KANBEROO_DATABASE_URL", raising=False)
+    monkeypatch.delenv("KANBEROO_COMPOSE_FILE", raising=False)
+    (tmp_path / "config.toml").write_text(
+        'api_url = "http://test.invalid"\n'
+        'token = "kbr_test"\n'
+        'default_workspace = "KAN"\n',
+        encoding="utf-8",
+    )
+
+    def _fake_run(argv: list[str], **_kwargs: Any) -> Any:
+        class _Completed:
+            returncode = 0
+
+        return _Completed()
+
+    monkeypatch.setattr(server_command.subprocess, "run", _fake_run)
+    monkeypatch.setattr(
+        server_command,
+        "_poll_until_ready",
+        lambda **_kwargs: True,
+    )
+    result = runner.invoke(app, ["server", "start", "--wait"])
+    assert result.exit_code == 0, result.stderr
+    assert "server started" in result.stdout.lower()
