@@ -56,7 +56,12 @@ class CliConfig:
 
     ``database_url`` is needed by ``kb backup`` to locate the raw
     SQLite file for a local snapshot; every other command only needs
-    ``api_url`` and ``token``.
+    ``api_url`` and ``token``. The field is typed ``str | None`` so the
+    API-only loader can skip the database-url validation and still
+    return a usable config (the HTTP-probe path in ``kb server start
+    --wait`` does not care where the database lives). Commands that
+    actually need the URL route through :func:`load_config`, which keeps
+    it mandatory.
 
     ``default_workspace`` is the optional workspace key most
     mutating/listing commands fall back to when neither ``--workspace``
@@ -66,7 +71,7 @@ class CliConfig:
 
     api_url: str
     token: str
-    database_url: str
+    database_url: str | None
     config_path: Path
     default_workspace: str | None = None
 
@@ -92,7 +97,11 @@ def default_config_path() -> Path:
     return default_config_dir() / "config.toml"
 
 
-def load_config(path: Path | None = None) -> CliConfig:
+def load_config(
+    path: Path | None = None,
+    *,
+    require_database_url: bool = True,
+) -> CliConfig:
     """
     Read ``config.toml`` and return a :class:`CliConfig`.
 
@@ -100,6 +109,18 @@ def load_config(path: Path | None = None) -> CliConfig:
     ``$KANBEROO_DATABASE_URL`` each override the matching TOML field
     when set; this lets the test suite and CI pipelines drive the CLI
     without touching a user's config.
+
+    ``api_url`` and ``token`` are always required.
+    ``require_database_url`` defaults to ``True``; pass ``False`` via
+    :func:`load_config_api_only` for commands that only hit the HTTP
+    API and never open the database directly (e.g.
+    ``kb server start --wait``).
+
+    TODO: broader CLI split needed between API-client commands (that
+    speak HTTP) and direct-DB-client commands (``kb backup``) so the
+    required-field set is implicit from the command rather than
+    manually wired per call site. Track alongside the API-client vs
+    direct-DB-client modes note in TODO.md.
 
     Raises :class:`ConfigNotFoundError` when the file is absent and
     :class:`ConfigMalformedError` when it is present but incomplete.
@@ -113,7 +134,9 @@ def load_config(path: Path | None = None) -> CliConfig:
 
     api_url = os.environ.get("KANBEROO_API_URL") or raw.get("api_url")
     token = os.environ.get("KANBEROO_TOKEN") or raw.get("token")
-    database_url = os.environ.get("KANBEROO_DATABASE_URL") or raw.get("database_url")
+    database_url_raw = os.environ.get("KANBEROO_DATABASE_URL") or raw.get(
+        "database_url"
+    )
     default_workspace_raw = raw.get("default_workspace")
 
     missing: list[str] = []
@@ -121,7 +144,9 @@ def load_config(path: Path | None = None) -> CliConfig:
         missing.append("api_url")
     if not isinstance(token, str) or not token:
         missing.append("token")
-    if not isinstance(database_url, str) or not database_url:
+    if require_database_url and (
+        not isinstance(database_url_raw, str) or not database_url_raw
+    ):
         missing.append("database_url")
     if missing:
         raise ConfigMalformedError(
@@ -136,7 +161,11 @@ def load_config(path: Path | None = None) -> CliConfig:
 
     assert isinstance(api_url, str)
     assert isinstance(token, str)
-    assert isinstance(database_url, str)
+    database_url: str | None = (
+        database_url_raw
+        if isinstance(database_url_raw, str) and database_url_raw
+        else None
+    )
     default_workspace: str | None = (
         default_workspace_raw if isinstance(default_workspace_raw, str) else None
     )
@@ -147,6 +176,18 @@ def load_config(path: Path | None = None) -> CliConfig:
         config_path=resolved_path,
         default_workspace=default_workspace,
     )
+
+
+def load_config_api_only(path: Path | None = None) -> CliConfig:
+    """
+    Like :func:`load_config` but does not require ``database_url``.
+
+    Used by commands that only need to talk to the running HTTP API
+    and never read the local database. ``database_url`` may be absent
+    from ``config.toml`` entirely; in that case the returned
+    ``CliConfig.database_url`` is ``None``.
+    """
+    return load_config(path, require_database_url=False)
 
 
 def _escape_toml(value: str) -> str:

@@ -57,6 +57,7 @@ def backup_command(
     Copy the configured SQLite database file to a timestamped path.
     """
     config = require_config()
+    assert config.database_url is not None  # require_config() guarantees this
     src = _sqlite_path_from_url(config.database_url)
     if src is None:
         stderr_console.print(

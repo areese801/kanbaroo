@@ -24,7 +24,7 @@ import httpx
 import typer
 
 from kanberoo_cli.client import API_PREFIX
-from kanberoo_cli.context import require_config
+from kanberoo_cli.context import require_config_api_only
 from kanberoo_cli.rendering import stderr_console, stdout_console
 
 app = typer.Typer(
@@ -105,7 +105,7 @@ def start_server(
         raise typer.Exit(code=exc.returncode) from exc
 
     if wait:
-        config = require_config()
+        config = require_config_api_only()
         if not _poll_until_ready(
             base_url=config.api_url,
             token=config.token,

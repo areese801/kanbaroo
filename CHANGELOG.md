@@ -4,11 +4,23 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added
+
+- `kb --version` flag and `kb version` subcommand. Both print the installed `kanberoo-cli` version via `importlib.metadata.version`, falling back to `unknown` when the package metadata is missing (e.g. running from a source checkout without an editable install).
+- `kb workspace delete <key-or-id> [--yes]` soft-deletes a workspace. Mirrors `kb story delete`: Rich confirm prompt (skip with `--yes`), resolves by workspace key or UUID, routes through the existing `DELETE /workspaces/{id}` endpoint so audit and optimistic-concurrency stay intact.
+- Root `LICENSE` file (MIT, `Copyright (c) 2026 Adam Reese`). Every sub-package's `pyproject.toml` already declared `license = { text = "MIT" }`; this lands the canonical license text. README footer points at `./LICENSE`.
+
+### Changed
+
+- `CliConfig.database_url` is now `str | None`. `load_config()` and `require_config()` still demand it, so `kb backup` and every other DB-reading caller stays strict. A new `load_config_api_only()` / `require_config_api_only()` pair validates only `api_url` + `token` for commands that strictly hit the HTTP API.
+
 ### Fixed
 
 - `story.transitioned` WebSocket event payload now includes `workspace_id` and `story_id` so the web UI's event stream filter matches and the board refetches after a TUI-originated transition. Previously the payload only carried `from_state` / `to_state` (and an optional `reason`), so TUI drags updated the database but the web UI silently kept the stale card.
 - Story-detail Edit mode freezes the story's version at the moment Edit is clicked and sends that frozen number in `If-Match` on Save. Tab A's save no longer races tab B into seeing a refreshed version before Save, so the two-tab conflict modal fires as intended.
 - Board column headings no longer display the story count in the visible heading. The count stays on the column's `aria-label` so screen readers still announce it.
+- StoryDetail Edit button now renders with the primary green treatment via a new `button.primary` CSS rule that mirrors the existing `button[type='submit']` styling. The button used to carry the neutral `secondary` class and blended into the dark chrome.
+- `kb server start --wait` no longer demands a `database_url` in `config.toml`. The wait path only HTTP-probes the running API, so gating it behind a field the probe never reads was a misstep. `kb server start` without `--wait` already did not require it; this aligns the two.
 
 ## [0.2.0] - 2026-04-22
 

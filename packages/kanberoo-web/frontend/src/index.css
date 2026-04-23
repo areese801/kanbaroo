@@ -53,6 +53,18 @@ button[type='submit']:hover {
   border-color: #8fbd45;
 }
 
+button.primary {
+  background: #7faa3a;
+  color: #0f1117;
+  border-color: #7faa3a;
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: #8fbd45;
+  border-color: #8fbd45;
+}
+
 input,
 textarea {
   font: inherit;
