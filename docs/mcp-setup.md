@@ -1,17 +1,17 @@
 # MCP Setup
 
-Short guide for wiring an AI agent (Claude Desktop or Claude Code) to Kanberoo via the Model Context Protocol.
+Short guide for wiring an AI agent (Claude Desktop or Claude Code) to Kanbaroo via the Model Context Protocol.
 
 ## What the MCP server does
 
-`kanberoo-mcp` is a thin translator between the MCP tool protocol and the Kanberoo REST API. It runs as a subprocess of the outer agent, speaks JSON-RPC over stdio, authenticates to the Kanberoo server with its own bearer token, and surfaces a curated set of tools for AI consumption.
+`kanbaroo-mcp` is a thin translator between the MCP tool protocol and the Kanbaroo REST API. It runs as a subprocess of the outer agent, speaks JSON-RPC over stdio, authenticates to the Kanbaroo server with its own bearer token, and surfaces a curated set of tools for AI consumption.
 
-Tool names and descriptions are crafted so an outer agent can pick the right tool without seeing REST endpoint names. Every mutation the agent makes is attributed to the MCP token's actor (you want that to be `claude`, not `human`) and recorded in Kanberoo's audit log.
+Tool names and descriptions are crafted so an outer agent can pick the right tool without seeing REST endpoint names. Every mutation the agent makes is attributed to the MCP token's actor (you want that to be `claude`, not `human`) and recorded in Kanbaroo's audit log.
 
 ## Prerequisites
 
-- A running Kanberoo server. Either `kb server start` (docker) or `uv run kanberoo-api` in a checkout.
-- The `kanberoo[all]` pip package installed, or at minimum `kanberoo-mcp` plus `kanberoo-cli` for token creation.
+- A running Kanbaroo server. Either `kb server start` (docker) or `uv run kanbaroo-api` in a checkout.
+- The `kanbaroo[all]` pip package installed, or at minimum `kanbaroo-mcp` plus `kanbaroo-cli` for token creation.
 
 ## 1. Create a claude-typed token
 
@@ -24,7 +24,7 @@ kb token create --actor-type claude --actor-id outer-claude --name "claude"
 Copy the plaintext into an environment variable rather than pasting it into a config file:
 
 ```bash
-export KANBEROO_MCP_TOKEN="kbr_..."
+export KANBAROO_MCP_TOKEN="kbr_..."
 ```
 
 If you ever need to rotate it, revoke the old token with `kb token revoke` and mint a new one.
@@ -36,9 +36,9 @@ The config block for Claude Desktop / Claude Code's `mcpServers` section:
 ```json
 {
   "mcpServers": {
-    "kanberoo": {
-      "command": "kanberoo-mcp",
-      "args": ["--api-url", "http://localhost:8080", "--token-env", "KANBEROO_MCP_TOKEN"]
+    "kanbaroo": {
+      "command": "kanbaroo-mcp",
+      "args": ["--api-url", "http://localhost:8080", "--token-env", "KANBAROO_MCP_TOKEN"]
     }
   }
 }
@@ -46,7 +46,7 @@ The config block for Claude Desktop / Claude Code's `mcpServers` section:
 
 Flags:
 
-- `--api-url`: base URL of the Kanberoo server. Use `http://localhost:8080` for the default docker compose setup.
+- `--api-url`: base URL of the Kanbaroo server. Use `http://localhost:8080` for the default docker compose setup.
 - `--token-env`: name of an environment variable holding the token plaintext. Preferred over `--token` because the plaintext never lands on the command line or in the config file.
 
 Restart the agent after editing its config. The MCP server will start on demand the first time the agent invokes a tool.
@@ -72,7 +72,7 @@ Ask the agent to list workspaces. A healthy response calls `list_workspaces` and
 
 A few failure modes and what they mean:
 
-- `[config_error] KANBEROO_MCP_TOKEN is not set`: the env var is missing from the agent's process environment. Most agents need a restart after `export`.
+- `[config_error] KANBAROO_MCP_TOKEN is not set`: the env var is missing from the agent's process environment. Most agents need a restart after `export`.
 - `[unauthorized] ...`: the token is wrong or revoked. Run `kb token list` to confirm, rotate if needed.
 - Tool result is empty list: the server is reachable but you have not created any workspaces yet. Run `kb workspace create --key KAN --name "My Work"` and retry.
 
@@ -108,4 +108,4 @@ Every tool the MCP server exposes, grouped by resource. Matches spec section 6.2
 
 - [`docs/api-reference.md`](api-reference.md): the underlying REST endpoints, every schema, every status code. Useful when an MCP tool response references a schema name.
 - [`docs/spec.md`](spec.md) section 6: design intent for the MCP layer.
-- [`docs/future-skill-draft.md`](future-skill-draft.md): draft workflow skill for agents using Kanberoo via MCP.
+- [`docs/future-skill-draft.md`](future-skill-draft.md): draft workflow skill for agents using Kanbaroo via MCP.

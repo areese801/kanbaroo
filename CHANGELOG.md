@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Kanberoo are recorded here. This project follows [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/).
+All notable changes to Kanbaroo are recorded here. This project follows [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 

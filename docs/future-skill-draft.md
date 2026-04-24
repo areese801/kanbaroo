@@ -1,23 +1,23 @@
 ---
-name: kanberoo-workflow
+name: kanbaroo-workflow
 description: |
   [DRAFT - NEEDS TUNING AFTER PHASE 1 IS BUILT]
 
-  Use this skill when working with Kanberoo, a kanban tool for managing software
+  Use this skill when working with Kanbaroo, a kanban tool for managing software
   work across workspaces, epics, and stories. Triggers when the user asks to:
   work on a specific story by its human ID (e.g. "let's work on KAN-123"),
   review what's in progress or up next, create stories from a planning session,
-  comment on or transition stories, or otherwise interact with the Kanberoo
+  comment on or transition stories, or otherwise interact with the Kanbaroo
   board. Also triggers when the user is deep in a coding session and identifies
   follow-up work that should be captured on the board rather than held in
-  context. Works standalone on any Kanberoo instance; optionally integrates
+  context. Works standalone on any Kanbaroo instance; optionally integrates
   with trusty-cage for delegating story implementation to isolated inner Claude
   sessions.
 ---
 
-# Kanberoo Workflow Skill
+# Kanbaroo Workflow Skill
 
-> **DRAFT STATUS**: This skill was written during Kanberoo's design phase, before
+> **DRAFT STATUS**: This skill was written during Kanbaroo's design phase, before
 > the MCP server was implemented. Tool names, parameter shapes, and specific
 > workflows below reflect *intended* behavior and will need to be reconciled
 > against the actual MCP implementation once available. Anywhere this skill
@@ -27,13 +27,13 @@ description: |
 
 ## Purpose
 
-Kanberoo is a kanban-style issue tracker. This skill teaches you (outer Claude)
+Kanbaroo is a kanban-style issue tracker. This skill teaches you (outer Claude)
 how to use its MCP tools to help the user manage work, and how to integrate that
 workflow with a coding session.
 
 ## Core Mental Model
 
-Kanberoo has a three-level hierarchy:
+Kanbaroo has a three-level hierarchy:
 
 - **Workspace**: A product, project, or engagement. Each workspace has a short
   key (e.g. `KAN`) used as a prefix for human-readable story IDs.
@@ -46,7 +46,7 @@ Stories move through a fixed state machine:
 `in_review` back to `in_progress` and a reopen path from `done`.
 
 Every mutation is attributed to an actor (`human`, `claude`, or `system`). When
-you act on Kanberoo via MCP, your mutations are stamped `claude`. When the user
+you act on Kanbaroo via MCP, your mutations are stamped `claude`. When the user
 acts via the TUI or CLI, mutations are stamped `human`. This distinction is
 visible in the audit log and the UI.
 
@@ -72,11 +72,11 @@ Do **not** use it when:
 
 ## Available MCP Tools
 
-> **TUNE**: Verify this list against the actual `kanberoo-mcp` server. The tool
+> **TUNE**: Verify this list against the actual `kanbaroo-mcp` server. The tool
 > names and parameter shapes below are the design intent; the implementation
 > may differ.
 
-The `kanberoo` MCP server exposes these tools. Full descriptions live on the
+The `kanbaroo` MCP server exposes these tools. Full descriptions live on the
 tools themselves; this is a quick reference.
 
 **Reading:**
@@ -145,7 +145,7 @@ When the user identifies follow-up work mid-session:
 
 ### Workflow 4: Integration with trusty-cage
 
-> **TUNE**: This section assumes the cage orchestrator and the Kanberoo skill
+> **TUNE**: This section assumes the cage orchestrator and the Kanbaroo skill
 > are both active. Coordinate with the `cage-orchestrator` skill.
 
 When delegating a story's implementation to an inner Claude via trusty-cage:
@@ -192,7 +192,7 @@ You stamp `actor_type=claude` on everything you do. Keep this in mind:
   exercise.** That's a bigger conversation; ask the user to do it via the TUI.
 - **Bulk operations** (moving 10 stories at once). Phase 1 MCP doesn't support
   these cleanly; iterate one at a time or defer.
-- **Anything outside Kanberoo.** If the user wants to mirror to Jira or post
+- **Anything outside Kanbaroo.** If the user wants to mirror to Jira or post
   to Slack, that's out of scope.
 
 ## Checklist Before Committing a Mutation
@@ -210,10 +210,10 @@ If you're unsure on any of these, stop and confirm with the user.
 
 ## Revision Notes
 
-> **TUNE** this skill after phase 1 of Kanberoo is implemented. Specifically:
+> **TUNE** this skill after phase 1 of Kanbaroo is implemented. Specifically:
 >
 > 1. Reconcile the tool list in "Available MCP Tools" against the actual
->    `kanberoo-mcp` server output.
+>    `kanbaroo-mcp` server output.
 > 2. Update parameter shapes and example calls based on real tool signatures.
 > 3. Validate the workflows end-to-end by running through each one manually.
 > 4. Coordinate with the `cage-orchestrator` skill on the handoff protocol

@@ -25,17 +25,17 @@ htmlcov/
 build/
 dist/
 *.egg-info/
-# Exception: kanberoo-web ships its static bundle under src/.../dist/ and
+# Exception: kanbaroo-web ships its static bundle under src/.../dist/ and
 # must be tracked so the wheel picks it up.
-!packages/kanberoo-web/src/kanberoo_web/dist/
-!packages/kanberoo-web/src/kanberoo_web/dist/**
+!packages/kanbaroo-web/src/kanbaroo_web/dist/
+!packages/kanbaroo-web/src/kanbaroo_web/dist/**
 
-# kanberoo-web frontend (Vite + React build inputs; only the built dist
-# under src/kanberoo_web/dist/ is version-controlled).
-packages/kanberoo-web/frontend/node_modules/
-packages/kanberoo-web/frontend/dist/
-packages/kanberoo-web/frontend/.vite/
-packages/kanberoo-web/frontend/coverage/
+# kanbaroo-web frontend (Vite + React build inputs; only the built dist
+# under src/kanbaroo_web/dist/ is version-controlled).
+packages/kanbaroo-web/frontend/node_modules/
+packages/kanbaroo-web/frontend/dist/
+packages/kanbaroo-web/frontend/.vite/
+packages/kanbaroo-web/frontend/coverage/
 
 # Don't track virtual environment subdirectories
 virtualenv/
@@ -54,7 +54,7 @@ test-plans/
 # Publishing credentials (read by the Makefile's publish target)
 set_creds*.sh
 
-# Local Kanberoo data (SQLite DBs, exports, backups)
+# Local Kanbaroo data (SQLite DBs, exports, backups)
 data/
 *.db
 *.db-journal

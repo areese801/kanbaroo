@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Kanberoo** is a kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP server. It is designed to be useful standalone and to integrate with trusty-cage for AI-driven workflows. Full design documented in `docs/spec.md`.
+**Kanbaroo** is a kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP server. It is designed to be useful standalone and to integrate with trusty-cage for AI-driven workflows. Full design documented in `docs/spec.md`.
 
 The canonical source of design intent is `docs/spec.md`. When in doubt, consult it before making architectural decisions.
 
@@ -28,7 +28,7 @@ This is a uv workspace monorepo. Install everything in dev mode:
 uv sync --all-packages --dev
 
 # Run the server (local dev)
-uv run kanberoo server start
+uv run kanbaroo server start
 
 # Lint & format
 uv run ruff format .
@@ -39,21 +39,21 @@ uv run mypy packages/
 
 # Tests
 uv run pytest                                    # All tests
-uv run pytest packages/kanberoo-core/tests       # Single package
+uv run pytest packages/kanbaroo-core/tests       # Single package
 uv run pytest -k test_story_transition           # Single test pattern
 
 # Migrations
-uv run alembic -c packages/kanberoo-core/alembic.ini upgrade head
-uv run alembic -c packages/kanberoo-core/alembic.ini revision --autogenerate -m "description"
+uv run alembic -c packages/kanbaroo-core/alembic.ini upgrade head
+uv run alembic -c packages/kanbaroo-core/alembic.ini revision --autogenerate -m "description"
 
 # Docker dev loop
 docker compose up -d
-docker compose logs -f kanberoo-api
+docker compose logs -f kanbaroo-api
 ```
 
 ### `kb server start` runs docker-compose, not a foreground uvicorn
 
-`uv run kb server start` (and the pipx-installed `kb server start`) is a thin wrapper around `docker compose up -d`. It does NOT run uvicorn in your terminal. The API runs inside the `kanberoo-api` container with its SQLite DB on a named volume (`kanberoo-data`, mounted at `/data/kanberoo.db`). Any `$KANBEROO_CONFIG_DIR` or `KANBEROO_DATABASE_URL` env vars set in your host shell are irrelevant to the container.
+`uv run kb server start` (and the pipx-installed `kb server start`) is a thin wrapper around `docker compose up -d`. It does NOT run uvicorn in your terminal. The API runs inside the `kanbaroo-api` container with its SQLite DB on a named volume (`kanbaroo-data`, mounted at `/data/kanbaroo.db`). Any `$KANBAROO_CONFIG_DIR` or `KANBAROO_DATABASE_URL` env vars set in your host shell are irrelevant to the container.
 
 ### First-boot container setup
 
@@ -61,24 +61,24 @@ The container's DB volume is blank on first boot. Host-side `kb init` writes to 
 
 ```bash
 # 1. Apply migrations against the container DB
-docker compose exec -e KANBEROO_DATABASE_URL="sqlite:////data/kanberoo.db" \
-  kanberoo-api \
-  uv run --no-dev alembic -c /app/packages/kanberoo-core/alembic.ini upgrade head
+docker compose exec -e KANBAROO_DATABASE_URL="sqlite:////data/kanbaroo.db" \
+  kanbaroo-api \
+  uv run --no-dev alembic -c /app/packages/kanbaroo-core/alembic.ini upgrade head
 
 # 2. Mint a token and write the container-side config.toml
-docker compose exec -e KANBEROO_DATABASE_URL="sqlite:////data/kanberoo.db" \
-  kanberoo-api \
+docker compose exec -e KANBAROO_DATABASE_URL="sqlite:////data/kanbaroo.db" \
+  kanbaroo-api \
   uv run --no-dev kb init
 ```
 
-Token value is printed by `kb init` and does not repeat; copy it. Paste it into the web UI's login form or save it to `~/.kanberoo/config.toml` (at minimum: `api_url = "http://localhost:8080"` and `token = "kbr_..."`) for TUI access. Note: `docker compose up -d` after an image rebuild recreates the container and wipes its writable filesystem (including `/root/.kanberoo/config.toml`); the named volume at `/data` persists, so the DB survives but you'll need to re-run `kb init` to regenerate the container-side config.
+Token value is printed by `kb init` and does not repeat; copy it. Paste it into the web UI's login form or save it to `~/.kanbaroo/config.toml` (at minimum: `api_url = "http://localhost:8080"` and `token = "kbr_..."`) for TUI access. Note: `docker compose up -d` after an image rebuild recreates the container and wipes its writable filesystem (including `/root/.kanbaroo/config.toml`); the named volume at `/data` persists, so the DB survives but you'll need to re-run `kb init` to regenerate the container-side config.
 
 ### Web UI development
 
-The `kanberoo-web` package ships a Vite + React SPA under `packages/kanberoo-web/frontend/`. The production build lives at `packages/kanberoo-web/src/kanberoo_web/dist/` and is committed so the wheel picks it up; only the built output, not the sources, needs to be in the wheel.
+The `kanbaroo-web` package ships a Vite + React SPA under `packages/kanbaroo-web/frontend/`. The production build lives at `packages/kanbaroo-web/src/kanbaroo_web/dist/` and is committed so the wheel picks it up; only the built output, not the sources, needs to be in the wheel.
 
 ```bash
-# Install Node deps + build the SPA into src/kanberoo_web/dist/
+# Install Node deps + build the SPA into src/kanbaroo_web/dist/
 make web-build
 
 # Run the Vite dev server (proxies /api and /api/v1/events to :8080)
@@ -93,16 +93,16 @@ Node 20+ is required at build time. `make publish` chains `web-build` before `bu
 ## Repo Structure
 
 ```
-kanberoo/
+kanbaroo/
 ├── docs/
 │   ├── spec.md                  # Authoritative design doc
 │   └── ...                      # Additional design docs
 ├── packages/
-│   ├── kanberoo-core/           # Models, schemas, business logic, migrations
-│   ├── kanberoo-api/            # FastAPI server (REST + WebSocket)
-│   ├── kanberoo-tui/            # Textual TUI
-│   ├── kanberoo-cli/            # Typer CLI (also the `kanberoo` entry point)
-│   └── kanberoo-mcp/            # MCP server
+│   ├── kanbaroo-core/           # Models, schemas, business logic, migrations
+│   ├── kanbaroo-api/            # FastAPI server (REST + WebSocket)
+│   ├── kanbaroo-tui/            # Textual TUI
+│   ├── kanbaroo-cli/            # Typer CLI (also the `kanbaroo` entry point)
+│   └── kanbaroo-mcp/            # MCP server
 ├── tests/                       # Cross-package integration tests
 ├── docker-compose.yml
 ├── Dockerfile
@@ -111,11 +111,11 @@ kanberoo/
 
 **Which package does this code belong in?**
 
-- Database models, Pydantic schemas, state machine logic, audit emission → `kanberoo-core`
-- HTTP endpoints, WebSocket handlers, auth middleware → `kanberoo-api`
-- Textual widgets, screens, and TUI app logic → `kanberoo-tui`
-- Typer commands and Rich formatting → `kanberoo-cli`
-- MCP tool definitions (thin wrappers over the REST API) → `kanberoo-mcp`
+- Database models, Pydantic schemas, state machine logic, audit emission → `kanbaroo-core`
+- HTTP endpoints, WebSocket handlers, auth middleware → `kanbaroo-api`
+- Textual widgets, screens, and TUI app logic → `kanbaroo-tui`
+- Typer commands and Rich formatting → `kanbaroo-cli`
+- MCP tool definitions (thin wrappers over the REST API) → `kanbaroo-mcp`
 
 When in doubt, business logic belongs in core. API packages should be thin.
 
@@ -133,16 +133,16 @@ When in doubt, business logic belongs in core. API packages should be thin.
 - SQLAlchemy 2.x declarative style with `Mapped[]` type annotations.
 - Pydantic v2 for all request and response schemas.
 - Never expose SQLAlchemy models directly through the API; always convert to Pydantic.
-- `kanberoo-core` defines both the ORM models and the Pydantic schemas. API packages import from core.
+- `kanbaroo-core` defines both the ORM models and the Pydantic schemas. API packages import from core.
 - Use SQLAlchemy sessions via dependency injection in FastAPI endpoints; never instantiate sessions in business logic.
 - **UUIDs are v7**, generated via the `uuid-utils` library (Rust-backed, fast). Do not use `uuid.uuid4()` from the stdlib for primary keys; v7 is required for insert locality and sortability. The library name is unfortunately generic; the version is what matters.
 
 ### FastAPI
 
 - Endpoints are thin: validate input, call a service function, return the response.
-- Business logic lives in `kanberoo_core.services.*`.
+- Business logic lives in `kanbaroo_core.services.*`.
 - Every mutating endpoint requires `If-Match` and returns `ETag`.
-- Error responses use the standard shape defined in `kanberoo_core.errors`.
+- Error responses use the standard shape defined in `kanbaroo_core.errors`.
 
 ### Testing
 
@@ -174,7 +174,7 @@ Never call a service function without an actor. There's no "anonymous" mutation 
 
 ### Audit Emission
 
-Every mutation emits an audit event. The pattern lives in `kanberoo_core.services.audit`:
+Every mutation emits an audit event. The pattern lives in `kanbaroo_core.services.audit`:
 
 ```python
 def emit_audit(session, actor, entity_type, entity_id, action, before, after):
@@ -200,7 +200,7 @@ Any UI that lets users edit a versioned entity must **snapshot `version` when en
 
 Why: the web UI's WebSocket hook invalidates and refetches entity queries when another client mutates them. If the edit form reads `version` from the cache at save, a refetch triggered by another client's write between "user clicked Edit" and "user clicked Save" will silently bump the cached version, making the user's save carry the newer version, match the server, and overwrite the other client's changes without triggering the 412 conflict path.
 
-The pattern (see `packages/kanberoo-web/frontend/src/routes/StoryDetail.tsx`):
+The pattern (see `packages/kanbaroo-web/frontend/src/routes/StoryDetail.tsx`):
 
 ```tsx
 const [editBaseVersion, setEditBaseVersion] = useState<number | null>(null);
@@ -231,7 +231,7 @@ A payload that is just a partial diff (for example `{from_state, to_state}`) sil
 
 ### WebSocket Event Emission
 
-Events are published to an in-process pub-sub bus in `kanberoo_core.events`. The API's WebSocket layer subscribes and forwards to connected clients.
+Events are published to an in-process pub-sub bus in `kanbaroo_core.events`. The API's WebSocket layer subscribes and forwards to connected clients.
 
 Services call `publish_event(...)` after a successful mutation, within the same transaction boundary (but after commit, so clients don't see events for rolled-back writes).
 
@@ -254,26 +254,26 @@ source set_creds.sh            # exports UV_PUBLISH_TOKEN
 make publish                   # builds, uploads, tags
 ```
 
-Post-publish validation (do this every release, not just when something feels off): in a fresh shell, run `pipx install --include-deps 'kanberoo[all]==<new version>'` and then `pipx runpip kanberoo list | grep kanberoo`. You should see all seven `kanberoo-*` packages (`kanberoo`, `-core`, `-api`, `-cli`, `-tui`, `-mcp`, `-web`) each at the new version. If `kanberoo-web` is missing, the top-level `[all]` extra has regressed (it should include `"kanberoo-api[web]"`, not plain `"kanberoo-api"`) — the v0.2.0 packaging bug was exactly this and it was invisible to Docker users because `uv sync --all-packages` follows workspace membership, not extras. 30-second check; catches a class of silent failures.
+Post-publish validation (do this every release, not just when something feels off): in a fresh shell, run `pipx install --include-deps 'kanbaroo[all]==<new version>'` and then `pipx runpip kanbaroo list | grep kanbaroo`. You should see all seven `kanbaroo-*` packages (`kanbaroo`, `-core`, `-api`, `-cli`, `-tui`, `-mcp`, `-web`) each at the new version. If `kanbaroo-web` is missing, the top-level `[all]` extra has regressed (it should include `"kanbaroo-api[web]"`, not plain `"kanbaroo-api"`) — the v0.2.0 packaging bug was exactly this and it was invisible to Docker users because `uv sync --all-packages` follows workspace membership, not extras. 30-second check; catches a class of silent failures.
 
 - `set_creds.sh` sits at the repo root and is gitignored via the `set_creds*.sh` pattern. It exports `UV_PUBLISH_TOKEN` before `make publish` runs `uv publish`. Do not commit it or quote it in chat.
 - Always merge to `main` via PR before publishing. Never publish from an unmerged branch (the `tag` step pushes against the current `HEAD`).
 - Each package has its own version in its own `pyproject.toml`. The top-level meta-package version tracks the overall release and is what `make tag` reads.
-- The initial PyPI release was `0.1.0` on 2026-04-19 and covers `kanberoo`, `kanberoo-core`, `kanberoo-api`, `kanberoo-cli`, `kanberoo-tui`, `kanberoo-mcp`. `kanberoo-web` is reserved at `0.0.1` as a placeholder for phase 2.
+- The initial PyPI release was `0.1.0` on 2026-04-19 and covers `kanbaroo`, `kanbaroo-core`, `kanbaroo-api`, `kanbaroo-cli`, `kanbaroo-tui`, `kanbaroo-mcp`. `kanbaroo-web` is reserved at `0.0.1` as a placeholder for phase 2.
 
 ### Per-package READMEs are required
 
-Every sub-package (`packages/kanberoo-*`) MUST have its own `README.md` next to its `pyproject.toml`, and the `pyproject.toml` `readme` field MUST point at that local file (`readme = "README.md"`).
+Every sub-package (`packages/kanbaroo-*`) MUST have its own `README.md` next to its `pyproject.toml`, and the `pyproject.toml` `readme` field MUST point at that local file (`readme = "README.md"`).
 
 Do NOT use `readme = "../../README.md"` to reference the root README: `uv build --all-packages` builds each sub-package's sdist first and then the wheel from the sdist, and the sdist does not include files from the parent directory. The wheel build fails with `OSError: Readme file does not exist: ../../README.md`. This is a build-system constraint, not a policy choice.
 
 ### Local install for Claude Desktop / other end users
 
 ```bash
-pipx install --include-deps 'kanberoo[all]'
+pipx install --include-deps 'kanbaroo[all]'
 ```
 
-`--include-deps` is load-bearing: without it, pipx only exposes the meta-package's apps (none), so `kb`, `kanberoo-mcp`, `kanberoo-tui`, `kanberoo-api`, and `kanberoo` all stay hidden in the isolated venv.
+`--include-deps` is load-bearing: without it, pipx only exposes the meta-package's apps (none), so `kb`, `kanbaroo-mcp`, `kanbaroo-tui`, `kanbaroo-api`, and `kanbaroo` all stay hidden in the isolated venv.
 
 ## Versioning
 
@@ -297,11 +297,11 @@ The open questions section of the spec (section 10) lists decisions we've explic
 
 ## Documentation Sync Responsibilities
 
-Kanberoo has multiple interlocking documents. When you change one, check whether the others need updates in the same PR:
+Kanbaroo has multiple interlocking documents. When you change one, check whether the others need updates in the same PR:
 
 - **`docs/spec.md`** — authoritative design intent. Update when: architecture changes, new entities or endpoints are added, open questions are resolved, or phase scope changes.
 - **`CLAUDE.md`** (this file) — guidance for Claude Code working in the repo. Update when: code conventions change, new non-negotiable principles emerge, the build or test workflow changes, or new architectural patterns are introduced.
-- **`docs/future-skill-draft.md`** (until phase 1 completes, then promoted to a real skill) — guidance for the outer Claude using Kanberoo via MCP. Update when: MCP tool names or shapes change, new workflows emerge, or attribution semantics shift.
+- **`docs/future-skill-draft.md`** (until phase 1 completes, then promoted to a real skill) — guidance for the outer Claude using Kanbaroo via MCP. Update when: MCP tool names or shapes change, new workflows emerge, or attribution semantics shift.
 - **`README.md`** — user-facing introduction. Update when: installation steps change, the feature list changes meaningfully, or the quickstart no longer works.
 - **`CHANGELOG.md`** — always updated for user-facing changes, per the Git Workflow section.
 
@@ -315,9 +315,9 @@ Kanberoo has multiple interlocking documents. When you change one, check whether
 
 If you notice existing docs are already out of sync (from prior work or spec drift), flag it to the user. Don't silently fix or silently ignore. Drift is a signal worth surfacing.
 
-## Kanberoo uses Kanberoo
+## Kanbaroo uses Kanbaroo
 
-Once phase 1 is sufficiently functional, Kanberoo's own work tracking moves into Kanberoo itself. This will be delightfully recursive and is the first real-world test of the tool.
+Once phase 1 is sufficiently functional, Kanbaroo's own work tracking moves into Kanbaroo itself. This will be delightfully recursive and is the first real-world test of the tool.
 
 ## Things NOT to do
 
