@@ -4,6 +4,10 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-23
+
+Grooming + packaging patch on top of v0.2.0. No behavioral changes to the REST API, WebSocket events, database schema, TUI, or MCP surface; no migration required. Upgrade at your leisure.
+
 ### Added
 
 - `kb --version` flag and `kb version` subcommand. Both print the installed `kanberoo-cli` version via `importlib.metadata.version`, falling back to `unknown` when the package metadata is missing (e.g. running from a source checkout without an editable install).
@@ -16,11 +20,13 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 
 ### Fixed
 
-- `story.transitioned` WebSocket event payload now includes `workspace_id` and `story_id` so the web UI's event stream filter matches and the board refetches after a TUI-originated transition. Previously the payload only carried `from_state` / `to_state` (and an optional `reason`), so TUI drags updated the database but the web UI silently kept the stale card.
-- Story-detail Edit mode freezes the story's version at the moment Edit is clicked and sends that frozen number in `If-Match` on Save. Tab A's save no longer races tab B into seeing a refreshed version before Save, so the two-tab conflict modal fires as intended.
-- Board column headings no longer display the story count in the visible heading. The count stays on the column's `aria-label` so screen readers still announce it.
 - StoryDetail Edit button now renders with the primary green treatment via a new `button.primary` CSS rule that mirrors the existing `button[type='submit']` styling. The button used to carry the neutral `secondary` class and blended into the dark chrome.
 - `kb server start --wait` no longer demands a `database_url` in `config.toml`. The wait path only HTTP-probes the running API, so gating it behind a field the probe never reads was a misstep. `kb server start` without `--wait` already did not require it; this aligns the two.
+- `kanberoo[all]` extra now pulls in `kanberoo-api[web]` so `pipx install --include-deps 'kanberoo[all]'` actually ships the web UI assets. v0.2.0 intended this but the `[all]` extra listed `kanberoo-api` without the `web` sub-extra, so users running `uv run kanberoo-api` directly from a pipx install saw the API start with the `/ui` mount silently skipped. Docker deployments were never affected (the `Dockerfile`'s `uv sync --all-packages` already pulls in `kanberoo-web` as a workspace member).
+
+### Docs
+
+- `README.md` audited against the shipped v0.2.0 code. Corrections: drop the `uv run kanberoo-api` alternative from the Quickstart (it crashes without `$KANBEROO_DATABASE_URL`); drop `--wait` from the web-UI first-boot drill (it demands a `config.toml` that does not exist yet on first boot); normalise `uv run kanberoo-tui` in the Quickstart to the direct `kanberoo-tui` entry point for pip-installed users; add `kanberoo-api[web]` to the Installation list; add a new "Configuration" section documenting every `KANBEROO_*` environment variable the codebase reads; correct "five packages" to "six packages" in the Development section; restyle the architecture diagram so the Web UI node is no longer marked as pending/phase-2.
 
 ## [0.2.0] - 2026-04-22
 
@@ -58,6 +64,9 @@ Phase 2 release. The web UI ships. All six production packages (`kanberoo`, `kan
 ### Fixed
 
 - TUI `DuplicateConfirm` modal hint renders as `[y]es create anyway  /  [n]o cancel` with literal brackets (Rich previously parsed `[y]` and `[n]` as unknown markup tags and ate the letters). User-supplied labels and titles inside the modal now route through a `_escape_markup` helper so a story named `[WIP] rewrite` cannot break the modal.
+- `story.transitioned` WebSocket event payload includes `workspace_id` and `story_id` so the web UI's event stream filter matches and the board refetches after a TUI-originated transition. Previously the payload only carried `from_state` / `to_state` (and an optional `reason`), so TUI drags updated the database but the web UI silently kept the stale card. *(Fix landed via PR #32 and shipped in v0.2.0; entry originally filed under `[Unreleased]` and moved here during the v0.2.1 release prep for accuracy.)*
+- Story-detail Edit mode freezes the story's version at the moment Edit is clicked and sends that frozen number in `If-Match` on Save. Tab A's save no longer races tab B into seeing a refreshed version before Save, so the two-tab conflict modal fires as intended. *(Fix landed via PR #32 and shipped in v0.2.0; entry originally filed under `[Unreleased]`.)*
+- Board column headings no longer display the story count in the visible heading. The count stays on the column's `aria-label` so screen readers still announce it. *(Fix landed via PR #32 and shipped in v0.2.0; entry originally filed under `[Unreleased]`.)*
 
 ## [0.1.0] - 2026-04-19
 

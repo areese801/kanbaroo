@@ -24,7 +24,7 @@ flowchart TB
         TUI["TUI<br/>(Textual)"]
         CLI["CLI<br/>(Typer + Rich)"]
         MCP["MCP Server<br/>(mcp SDK)"]
-        WEB["Web UI<br/>(phase 2)"]
+        WEB["Web UI<br/>(React SPA)"]
     end
 
     subgraph server["Kanberoo Server"]
@@ -46,7 +46,7 @@ flowchart TB
     TUI -->|HTTP + WS| WS
     CLI -->|HTTP| REST
     MCP -->|HTTP| REST
-    WEB -.->|HTTP + WS| REST
+    WEB -->|HTTP + WS| REST
 
     REST --> CORE
     WS --> CORE
@@ -55,7 +55,6 @@ flowchart TB
     DB -.->|direct read| DUCK
     DB -.->|direct read| GHA
 
-    style WEB stroke-dasharray: 5 5
     style DUCK stroke-dasharray: 5 5
     style GHA stroke-dasharray: 5 5
 ```
@@ -69,10 +68,11 @@ Requires Python 3.12 or newer.
 pip install 'kanberoo[all]'
 
 # Or pick and choose:
-pip install kanberoo-api     # Just the server
-pip install kanberoo-cli     # CLI only (pulls in core)
-pip install kanberoo-tui     # TUI only
-pip install kanberoo-mcp     # MCP server only
+pip install kanberoo-api          # Just the server (no web UI)
+pip install 'kanberoo-api[web]'   # Server + bundled web UI at /ui
+pip install kanberoo-cli          # CLI only (pulls in core)
+pip install kanberoo-tui          # TUI only
+pip install kanberoo-mcp          # MCP server only
 ```
 
 Contributors working from a checkout should use the [uv](https://docs.astral.sh/uv/) workspace instead:
@@ -92,11 +92,8 @@ pip install 'kanberoo[all]'
 # 2. Initialise config dir, apply migrations, mint your first token
 kb init
 
-# 3. Start the server. Either via docker compose ...
+# 3. Start the server (docker compose under the hood)
 kb server start
-
-#    ... or directly for local dev
-uv run kanberoo-api
 
 # 4. Create your first workspace
 kb workspace create --key KAN --name "My Work"
@@ -105,10 +102,27 @@ kb workspace create --key KAN --name "My Work"
 kb story create --workspace KAN --title "First task"
 
 # 6. In another terminal, open the TUI on the board
-uv run kanberoo-tui
+kanberoo-tui
 ```
 
 Press `?` on any TUI screen for the keybinding cheatsheet. Press `/` from the workspace list or board for fuzzy search. `a` opens the global audit feed.
+
+## Configuration
+
+Kanberoo reads settings from `$KANBEROO_CONFIG_DIR/config.toml` (default `~/.kanberoo/config.toml`), which `kb init` creates for you. Environment variables override the TOML values when set.
+
+| Variable | Consumed by | Default / note |
+|----------|-------------|----------------|
+| `KANBEROO_DATABASE_URL` | core, api, `kb init`, `kb backup` | Required for the API to start. Docker supplies `sqlite:////data/kanberoo.db` inside the container. |
+| `KANBEROO_API_URL` | cli, tui, mcp | Overrides `api_url` in `config.toml`. Example: `http://localhost:8080`. |
+| `KANBEROO_TOKEN` | cli, tui | Bearer token for API auth. Overrides `token` in `config.toml`. |
+| `KANBEROO_MCP_TOKEN` | mcp | MCP-specific token; falls back to `KANBEROO_TOKEN`. |
+| `KANBEROO_CONFIG_DIR` | cli, tui, mcp, `kb init` | Override for the config directory. Default: `~/.kanberoo`. |
+| `KANBEROO_WORKSPACE` | cli | Default workspace key so you can omit `--workspace` on every command. Example: `KAN`. |
+| `KANBEROO_API_HOST` | api server | Uvicorn bind host. Default: `0.0.0.0`. |
+| `KANBEROO_API_PORT` | api server | Uvicorn bind port. Default: `8080`. |
+| `KANBEROO_COMPOSE_FILE` | `kb server` | Path to a non-default `docker-compose.yml` (useful for CI). |
+| `KANBEROO_MCP_LOG_LEVEL` | mcp | `INFO` by default; `DEBUG` for verbose MCP logs. |
 
 ## Web UI
 
@@ -120,7 +134,7 @@ The `kanberoo-web` package ships a Vite + React SPA that `kanberoo-api` serves a
 
 ```bash
 # Bring the stack up
-kb server start --wait
+kb server start
 
 # Apply migrations
 docker compose exec -e KANBEROO_DATABASE_URL="sqlite:////data/kanberoo.db" \
@@ -193,7 +207,7 @@ See [`docs/mcp-setup.md`](docs/mcp-setup.md) for the full walkthrough, the smoke
 
 ## Development
 
-This is a uv workspace monorepo with five packages in `packages/` and a top-level meta-package with an `[all]` extra. Before committing anything:
+This is a uv workspace monorepo with six packages in `packages/` (`kanberoo-core`, `-api`, `-cli`, `-tui`, `-mcp`, `-web`) and a top-level meta-package with an `[all]` extra. Before committing anything:
 
 ```bash
 uv run ruff format .
