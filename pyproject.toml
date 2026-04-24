@@ -12,7 +12,7 @@ dependencies = []
 [project.optional-dependencies]
 all = [
     "kanberoo-core",
-    "kanberoo-api",
+    "kanberoo-api[web]",
     "kanberoo-tui",
     "kanberoo-cli",
     "kanberoo-mcp",

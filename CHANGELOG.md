@@ -21,6 +21,11 @@ All notable changes to Kanberoo are recorded here. This project follows [Semanti
 - Board column headings no longer display the story count in the visible heading. The count stays on the column's `aria-label` so screen readers still announce it.
 - StoryDetail Edit button now renders with the primary green treatment via a new `button.primary` CSS rule that mirrors the existing `button[type='submit']` styling. The button used to carry the neutral `secondary` class and blended into the dark chrome.
 - `kb server start --wait` no longer demands a `database_url` in `config.toml`. The wait path only HTTP-probes the running API, so gating it behind a field the probe never reads was a misstep. `kb server start` without `--wait` already did not require it; this aligns the two.
+- `kanberoo[all]` extra now pulls in `kanberoo-api[web]` so `pipx install --include-deps 'kanberoo[all]'` actually ships the web UI assets. v0.2.0 intended this but the `[all]` extra listed `kanberoo-api` without the `web` sub-extra, so users running `uv run kanberoo-api` directly from a pipx install saw the API start with the `/ui` mount silently skipped. Docker deployments were never affected (the `Dockerfile`'s `uv sync --all-packages` already pulls in `kanberoo-web` as a workspace member).
+
+### Docs
+
+- `README.md` audited against the shipped v0.2.0 code. Corrections: drop the `uv run kanberoo-api` alternative from the Quickstart (it crashes without `$KANBEROO_DATABASE_URL`); drop `--wait` from the web-UI first-boot drill (it demands a `config.toml` that does not exist yet on first boot); normalise `uv run kanberoo-tui` in the Quickstart to the direct `kanberoo-tui` entry point for pip-installed users; add `kanberoo-api[web]` to the Installation list; add a new "Configuration" section documenting every `KANBEROO_*` environment variable the codebase reads; correct "five packages" to "six packages" in the Development section; restyle the architecture diagram so the Web UI node is no longer marked as pending/phase-2.
 
 ## [0.2.0] - 2026-04-22
 
