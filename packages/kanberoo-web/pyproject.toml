@@ -1,6 +1,6 @@
 [project]
 name = "kanberoo-web"
-version = "0.2.0"
+version = "0.2.1"
 description = "Kanberoo phase 2 web UI: React SPA plus static asset bundle served by kanberoo-api."
 readme = "README.md"
 requires-python = ">=3.12"
