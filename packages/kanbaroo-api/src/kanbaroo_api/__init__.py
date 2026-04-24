@@ -9,6 +9,6 @@ The package entry point for application code is :func:`create_app` in
 from kanbaroo_api.app import create_app
 from kanbaroo_api.server import run
 
-__version__ = "0.1.0"
+__version__ = "0.2.2"
 
 __all__ = ["__version__", "create_app", "run"]

@@ -4,6 +4,24 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-24
+
+Project renamed from `kanberoo` to `kanbaroo`. The name is a portmanteau of `kangaroo` + `kanban`; the middle letter should have been `a` from the start. Pure rename, no behavior changes.
+
+### Changed
+
+- **Package names** — all seven workspace packages rename: `kanberoo`, `kanberoo-core`, `kanberoo-api`, `kanberoo-cli`, `kanberoo-tui`, `kanberoo-mcp`, `kanberoo-web` become `kanbaroo-*`. Python import paths change accordingly (`kanbaroo_core`, `kanbaroo_api`, etc.).
+- **CLI entry points** — `kb` is unchanged; `kanberoo` and `kanberoo-mcp` rename to `kanbaroo` and `kanbaroo-mcp`. The `kanberoo-tui` and `kanberoo-api` entry points likewise.
+- **Environment variables** — `KANBEROO_DATABASE_URL`, `KANBEROO_CONFIG_DIR`, `KANBEROO_TOKEN`, `KANBEROO_MCP_TOKEN`, `KANBEROO_WORKSPACE` become `KANBAROO_*`. Update any `.env` files and shell init scripts.
+- **Default config directory** — `~/.kanberoo/` becomes `~/.kanbaroo/`. Existing config files need to be moved manually: `mv ~/.kanberoo ~/.kanbaroo`.
+- **Docker** — compose service `kanbaroo-api`, image `kanbaroo/kanbaroo:dev`, container `kanbaroo-api`, volume `kanbaroo-data`, sqlite path `/data/kanbaroo.db`.
+- **GitHub repository** — now at `github.com/areese801/kanbaroo`. The old `kanberoo` URL redirects permanently (issues, PRs, clones all follow).
+
+### Compatibility
+
+- The old `kanberoo*` names on PyPI are kept alive as rename stubs at `0.2.2`. `pip install kanberoo` and `pip install kanberoo[all]` still work — they install `kanbaroo*` transitively.
+- Existing SQLite/Postgres databases are unaffected: the schema is identical. Nothing to migrate.
+
 ## [0.2.1] - 2026-04-23
 
 Grooming + packaging patch on top of v0.2.0. No behavioral changes to the REST API, WebSocket events, database schema, TUI, or MCP surface; no migration required. Upgrade at your leisure.
