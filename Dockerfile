@@ -12,4 +12,4 @@ RUN uv sync --all-packages --no-dev
 
 EXPOSE 8080
 
-CMD ["uv", "run", "--no-dev", "kanberoo-api"]
+CMD ["uv", "run", "--no-dev", "kanbaroo-api"]

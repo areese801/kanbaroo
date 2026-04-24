@@ -4,13 +4,13 @@ requires-python = ">=3.12"
 
 [manifest]
 members = [
-    "kanberoo",
-    "kanberoo-api",
-    "kanberoo-cli",
-    "kanberoo-core",
-    "kanberoo-mcp",
-    "kanberoo-tui",
-    "kanberoo-web",
+    "kanbaroo",
+    "kanbaroo-api",
+    "kanbaroo-cli",
+    "kanbaroo-core",
+    "kanbaroo-mcp",
+    "kanbaroo-tui",
+    "kanbaroo-web",
 ]
 
 [[package]]
@@ -395,17 +395,17 @@ wheels = [
 ]
 
 [[package]]
-name = "kanberoo"
-version = "0.2.0"
+name = "kanbaroo"
+version = "0.2.1"
 source = { editable = "." }
 
 [package.optional-dependencies]
 all = [
-    { name = "kanberoo-api" },
-    { name = "kanberoo-cli" },
-    { name = "kanberoo-core" },
-    { name = "kanberoo-mcp" },
-    { name = "kanberoo-tui" },
+    { name = "kanbaroo-api", extra = ["web"] },
+    { name = "kanbaroo-cli" },
+    { name = "kanbaroo-core" },
+    { name = "kanbaroo-mcp" },
+    { name = "kanbaroo-tui" },
 ]
 
 [package.dev-dependencies]
@@ -420,11 +420,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "kanberoo-api", marker = "extra == 'all'", editable = "packages/kanberoo-api" },
-    { name = "kanberoo-cli", marker = "extra == 'all'", editable = "packages/kanberoo-cli" },
-    { name = "kanberoo-core", marker = "extra == 'all'", editable = "packages/kanberoo-core" },
-    { name = "kanberoo-mcp", marker = "extra == 'all'", editable = "packages/kanberoo-mcp" },
-    { name = "kanberoo-tui", marker = "extra == 'all'", editable = "packages/kanberoo-tui" },
+    { name = "kanbaroo-api", extras = ["web"], marker = "extra == 'all'", editable = "packages/kanbaroo-api" },
+    { name = "kanbaroo-cli", marker = "extra == 'all'", editable = "packages/kanbaroo-cli" },
+    { name = "kanbaroo-core", marker = "extra == 'all'", editable = "packages/kanbaroo-core" },
+    { name = "kanbaroo-mcp", marker = "extra == 'all'", editable = "packages/kanbaroo-mcp" },
+    { name = "kanbaroo-tui", marker = "extra == 'all'", editable = "packages/kanbaroo-tui" },
 ]
 provides-extras = ["all"]
 
@@ -439,38 +439,38 @@ dev = [
 ]
 
 [[package]]
-name = "kanberoo-api"
-version = "0.2.0"
-source = { editable = "packages/kanberoo-api" }
+name = "kanbaroo-api"
+version = "0.2.1"
+source = { editable = "packages/kanbaroo-api" }
 dependencies = [
     { name = "fastapi" },
-    { name = "kanberoo-core" },
+    { name = "kanbaroo-core" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "websockets" },
 ]
 
 [package.optional-dependencies]
 web = [
-    { name = "kanberoo-web" },
+    { name = "kanbaroo-web" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
-    { name = "kanberoo-core", editable = "packages/kanberoo-core" },
-    { name = "kanberoo-web", marker = "extra == 'web'", editable = "packages/kanberoo-web" },
+    { name = "kanbaroo-core", editable = "packages/kanbaroo-core" },
+    { name = "kanbaroo-web", marker = "extra == 'web'", editable = "packages/kanbaroo-web" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27" },
     { name = "websockets", specifier = ">=12.0" },
 ]
 provides-extras = ["web"]
 
 [[package]]
-name = "kanberoo-cli"
-version = "0.2.0"
-source = { editable = "packages/kanberoo-cli" }
+name = "kanbaroo-cli"
+version = "0.2.1"
+source = { editable = "packages/kanbaroo-cli" }
 dependencies = [
     { name = "httpx" },
-    { name = "kanberoo-core" },
+    { name = "kanbaroo-core" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -478,15 +478,15 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "kanberoo-core", editable = "packages/kanberoo-core" },
+    { name = "kanbaroo-core", editable = "packages/kanbaroo-core" },
     { name = "rich", specifier = ">=13.7" },
     { name = "typer", specifier = ">=0.12" },
 ]
 
 [[package]]
-name = "kanberoo-core"
-version = "0.2.0"
-source = { editable = "packages/kanberoo-core" }
+name = "kanbaroo-core"
+version = "0.2.1"
+source = { editable = "packages/kanbaroo-core" }
 dependencies = [
     { name = "alembic" },
     { name = "pyarrow" },
@@ -505,13 +505,13 @@ requires-dist = [
 ]
 
 [[package]]
-name = "kanberoo-mcp"
-version = "0.2.0"
-source = { editable = "packages/kanberoo-mcp" }
+name = "kanbaroo-mcp"
+version = "0.2.1"
+source = { editable = "packages/kanbaroo-mcp" }
 dependencies = [
     { name = "anyio" },
     { name = "httpx" },
-    { name = "kanberoo-core" },
+    { name = "kanbaroo-core" },
     { name = "mcp" },
 ]
 
@@ -519,17 +519,17 @@ dependencies = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.0" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "kanberoo-core", editable = "packages/kanberoo-core" },
+    { name = "kanbaroo-core", editable = "packages/kanbaroo-core" },
     { name = "mcp", specifier = ">=1.0" },
 ]
 
 [[package]]
-name = "kanberoo-tui"
-version = "0.2.0"
-source = { editable = "packages/kanberoo-tui" }
+name = "kanbaroo-tui"
+version = "0.2.1"
+source = { editable = "packages/kanbaroo-tui" }
 dependencies = [
     { name = "httpx" },
-    { name = "kanberoo-core" },
+    { name = "kanbaroo-core" },
     { name = "textual" },
     { name = "websockets" },
 ]
@@ -537,15 +537,15 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "kanberoo-core", editable = "packages/kanberoo-core" },
+    { name = "kanbaroo-core", editable = "packages/kanbaroo-core" },
     { name = "textual", specifier = ">=0.70" },
     { name = "websockets", specifier = ">=12.0" },
 ]
 
 [[package]]
-name = "kanberoo-web"
-version = "0.2.0"
-source = { editable = "packages/kanberoo-web" }
+name = "kanbaroo-web"
+version = "0.2.1"
+source = { editable = "packages/kanbaroo-web" }
 
 [[package]]
 name = "librt"

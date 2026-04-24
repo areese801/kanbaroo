@@ -1,7 +1,7 @@
 """
-Build a Markdown reference for the Kanberoo REST API.
+Build a Markdown reference for the Kanbaroo REST API.
 
-Imports :func:`kanberoo_api.app.create_app`, pulls the OpenAPI 3.x
+Imports :func:`kanbaroo_api.app.create_app`, pulls the OpenAPI 3.x
 schema, and renders a compact Markdown document grouped by tag. Writes
 the result to ``docs/api-reference.md`` at the repo root.
 
@@ -26,12 +26,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_PATH = REPO_ROOT / "docs" / "api-reference.md"
 
 HEADER = (
-    "# Kanberoo REST API\n"
+    "# Kanbaroo REST API\n"
     "\n"
     "Generated file. Do not edit by hand. Run "
     "`uv run python scripts/build_api_reference.py` to regenerate.\n"
     "\n"
-    "Source: `packages/kanberoo-api/src/kanberoo_api/` OpenAPI schema.\n"
+    "Source: `packages/kanbaroo-api/src/kanbaroo_api/` OpenAPI schema.\n"
 )
 
 
@@ -276,8 +276,8 @@ def build() -> Path:
     the generated content is empty (sign of a schema regression that
     the acceptance gate should catch).
     """
-    os.environ.setdefault("KANBEROO_DATABASE_URL", "sqlite:///:memory:")
-    from kanberoo_api.app import create_app
+    os.environ.setdefault("KANBAROO_DATABASE_URL", "sqlite:///:memory:")
+    from kanbaroo_api.app import create_app
 
     app = create_app()
     schema = app.openapi()

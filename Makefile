@@ -1,9 +1,9 @@
 .PHONY: help build publish tag lint format test clean sync web-build web-dev web-test
 
-# Kanberoo is a uv workspace monorepo. `uv build --all-packages`
-# builds every workspace member (kanberoo-core, kanberoo-api,
-# kanberoo-cli, kanberoo-tui, kanberoo-mcp, kanberoo-web) plus the
-# top-level `kanberoo` meta-package into dist/.
+# Kanbaroo is a uv workspace monorepo. `uv build --all-packages`
+# builds every workspace member (kanbaroo-core, kanbaroo-api,
+# kanbaroo-cli, kanbaroo-tui, kanbaroo-mcp, kanbaroo-web) plus the
+# top-level `kanbaroo` meta-package into dist/.
 #
 # `make publish` runs `web-build` first so the release wheel carries
 # fresh JS/CSS. `make build` skips the frontend step so dev iteration
@@ -48,11 +48,11 @@ clean: ## Remove build artifacts
 	rm -rf dist/ build/
 	find packages -type d -name '*.egg-info' -exec rm -rf {} +
 
-web-build: ## Build the kanberoo-web frontend into packages/kanberoo-web/src/kanberoo_web/dist/
-	cd packages/kanberoo-web/frontend && npm ci && npm run build
+web-build: ## Build the kanbaroo-web frontend into packages/kanbaroo-web/src/kanbaroo_web/dist/
+	cd packages/kanbaroo-web/frontend && npm ci && npm run build
 
-web-dev: ## Run the Vite dev server for the kanberoo-web frontend (proxies /api and /api/v1/events to :8080)
-	cd packages/kanberoo-web/frontend && npm run dev
+web-dev: ## Run the Vite dev server for the kanbaroo-web frontend (proxies /api and /api/v1/events to :8080)
+	cd packages/kanbaroo-web/frontend && npm run dev
 
-web-test: ## Run the kanberoo-web frontend test suite (vitest, single-shot)
-	cd packages/kanberoo-web/frontend && npm test -- --run
+web-test: ## Run the kanbaroo-web frontend test suite (vitest, single-shot)
+	cd packages/kanbaroo-web/frontend && npm test -- --run

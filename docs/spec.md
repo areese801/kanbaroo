@@ -1,4 +1,4 @@
-# Kanberoo: Specification
+# Kanbaroo: Specification
 
 > A kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP layer. Designed to be useful to humans on its own, and to integrate tightly with trusty-cage for AI-driven workflows.
 
@@ -8,7 +8,7 @@
 
 ## 1. Project Overview
 
-Kanberoo is a self-hosted, single-binary-feeling kanban tool for managing software work. It exposes the same underlying data through four surfaces:
+Kanbaroo is a self-hosted, single-binary-feeling kanban tool for managing software work. It exposes the same underlying data through four surfaces:
 
 1. A **TUI** for terminal-centric humans (you).
 2. A **REST + WebSocket API** as the source of truth for all mutations and live change events.
@@ -17,7 +17,7 @@ Kanberoo is a self-hosted, single-binary-feeling kanban tool for managing softwa
 
 The core data model is intentionally Jira-shaped but dramatically simpler: Workspaces contain optional Epics which contain Stories. Stories carry comments, tags, typed linkages to other stories, priority, and a standard kanban lifecycle.
 
-Kanberoo is designed to be useful **standalone**. A human can drive the entire thing through the TUI or web UI with no AI involvement. The MCP layer is an additive integration surface, not a dependency. The trusty-cage orchestrator uses Kanberoo as a backend for storing work-to-be-done across coding sessions, but Kanberoo has no knowledge of trusty-cage.
+Kanbaroo is designed to be useful **standalone**. A human can drive the entire thing through the TUI or web UI with no AI involvement. The MCP layer is an additive integration surface, not a dependency. The trusty-cage orchestrator uses Kanbaroo as a backend for storing work-to-be-done across coding sessions, but Kanbaroo has no knowledge of trusty-cage.
 
 ### 1.1 Goals
 
@@ -34,7 +34,7 @@ The following are **deliberately out of scope**. If you find yourself implementi
 - Sprints, velocity tracking, burndown charts, agile ceremonies.
 - Gantt charts, dependency timelines, critical path analysis.
 - Time tracking, billing, effort estimation beyond priority.
-- Multi-tenant SaaS. Kanberoo is self-hosted per instance.
+- Multi-tenant SaaS. Kanbaroo is self-hosted per instance.
 - Custom workflows, custom issue types, custom fields. The schema is what it is.
 - Real-time collaborative editing of descriptions (Google Docs style). Optimistic concurrency with conflict rejection is sufficient.
 - Attachments and file uploads (deferred, not rejected; see phase two).
@@ -57,10 +57,10 @@ flowchart TB
         WEB["Web UI<br/>(phase 2)"]
     end
 
-    subgraph server["Kanberoo Server"]
+    subgraph server["Kanbaroo Server"]
         REST["FastAPI<br/>REST endpoints"]
         WS["WebSocket<br/>event stream"]
-        CORE["kanberoo-core<br/>(business logic)"]
+        CORE["kanbaroo-core<br/>(business logic)"]
     end
 
     subgraph storage["Storage"]
@@ -110,7 +110,7 @@ flowchart TB
 Monorepo with separately packaged components sharing a core library:
 
 ```
-kanberoo/
+kanbaroo/
 ├── README.md
 ├── CHANGELOG.md
 ├── CLAUDE.md                  # Guidance for Claude Code when working on this repo
@@ -118,21 +118,21 @@ kanberoo/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── packages/
-│   ├── kanberoo-core/         # Shared: models, schemas, business logic
+│   ├── kanbaroo-core/         # Shared: models, schemas, business logic
 │   │   ├── pyproject.toml
-│   │   └── src/kanberoo_core/
-│   ├── kanberoo-api/          # FastAPI server (REST + WebSocket)
+│   │   └── src/kanbaroo_core/
+│   ├── kanbaroo-api/          # FastAPI server (REST + WebSocket)
 │   │   ├── pyproject.toml
-│   │   └── src/kanberoo_api/
-│   ├── kanberoo-tui/          # Textual TUI
+│   │   └── src/kanbaroo_api/
+│   ├── kanbaroo-tui/          # Textual TUI
 │   │   ├── pyproject.toml
-│   │   └── src/kanberoo_tui/
-│   ├── kanberoo-cli/          # Typer CLI
+│   │   └── src/kanbaroo_tui/
+│   ├── kanbaroo-cli/          # Typer CLI
 │   │   ├── pyproject.toml
-│   │   └── src/kanberoo_cli/
-│   └── kanberoo-mcp/          # MCP server
+│   │   └── src/kanbaroo_cli/
+│   └── kanbaroo-mcp/          # MCP server
 │       ├── pyproject.toml
-│       └── src/kanberoo_mcp/
+│       └── src/kanbaroo_mcp/
 ├── migrations/                # Alembic migrations (shared, versioned)
 └── tests/                     # Integration tests spanning packages
 ```
@@ -140,9 +140,9 @@ kanberoo/
 Each package publishes independently to PyPI so users can install just what they need:
 
 ```bash
-pip install kanberoo-api       # Just the server
-pip install kanberoo-tui       # Pulls in kanberoo-core
-pip install kanberoo[all]      # Everything
+pip install kanbaroo-api       # Just the server
+pip install kanbaroo-tui       # Pulls in kanbaroo-core
+pip install kanbaroo[all]      # Everything
 ```
 
 ### 2.4 Data Portability Contract
@@ -162,7 +162,7 @@ This is a first-class design constraint, not an afterthought:
 
 ### 3.1 Conceptual Overview
 
-- **Workspace**: Top-level container. Roughly "a product" or "a consulting engagement." Owns a key prefix (e.g. `KAN` for Kanberoo itself) used to generate human IDs. May be associated with zero or more git repositories.
+- **Workspace**: Top-level container. Roughly "a product" or "a consulting engagement." Owns a key prefix (e.g. `KAN` for Kanbaroo itself) used to generate human IDs. May be associated with zero or more git repositories.
 - **Epic** (optional): Container for related stories. Roughly "a milestone" or "a major feature." Stories may belong to exactly one epic or directly to a workspace with no epic.
 - **Story**: The unit of work. Maps mentally to "a pull request." Has title, markdown description, priority, state, tags, comments, linkages.
 - **Linkage**: A typed, directed relationship between two stories (or between a story and an epic). Types: `relates_to`, `blocks`, `is_blocked_by`, `duplicates`, `is_duplicated_by`. Blocking and duplication pairs are automatically mirrored (creating one end atomically creates the opposite end, and deleting either end soft-deletes its mirror); `relates_to` has no paired opposite and is stored unidirectionally.
@@ -365,7 +365,7 @@ CREATE TABLE api_tokens (
 
 ### 4.2 Endpoint Surface
 
-Presented by resource. Full request/response schemas defined in Pydantic models in `kanberoo-core`.
+Presented by resource. Full request/response schemas defined in Pydantic models in `kanbaroo-core`.
 
 #### Workspaces
 
@@ -567,9 +567,9 @@ The MCP server config block for Claude's settings looks like:
 ```json
 {
   "mcpServers": {
-    "kanberoo": {
-      "command": "kanberoo-mcp",
-      "args": ["--api-url", "http://localhost:8080", "--token-env", "KANBEROO_MCP_TOKEN"]
+    "kanbaroo": {
+      "command": "kanbaroo-mcp",
+      "args": ["--api-url", "http://localhost:8080", "--token-env", "KANBAROO_MCP_TOKEN"]
     }
   }
 }
@@ -581,7 +581,7 @@ The MCP server config block for Claude's settings looks like:
 
 ### 7.1 Invocation
 
-Primary command: `kanberoo`. Short alias: `kb`.
+Primary command: `kanbaroo`. Short alias: `kb`.
 
 ### 7.2 Command Surface
 
@@ -589,14 +589,14 @@ Designed to feel like `gh` or `tc`:
 
 ```bash
 # Setup
-kb init                                   # Creates config dir, generates personal token, writes ~/.kanberoo/config.toml
+kb init                                   # Creates config dir, generates personal token, writes ~/.kanbaroo/config.toml
 kb config show
 kb server start                           # Start the FastAPI server (docker compose up)
 kb server stop
 
 # Workspaces
 kb workspace list
-kb workspace create --key KAN --name "Kanberoo"
+kb workspace create --key KAN --name "Kanbaroo"
 kb workspace show KAN
 
 # Stories (the most-used surface)
@@ -620,7 +620,7 @@ kb tag create --workspace KAN bug --color "#cc3333"
 # Audit, export, backup
 kb audit KAN-123
 kb export --workspace KAN --output ./snapshot/       # Parquet + SQLite archive via /export endpoint
-kb backup --output ~/.kanberoo/backups/              # Timestamped raw SQLite file copy; local-only, no server round-trip
+kb backup --output ~/.kanbaroo/backups/              # Timestamped raw SQLite file copy; local-only, no server round-trip
 
 # Tokens
 kb token list
@@ -638,8 +638,8 @@ All list commands support `--json` for scripting and default to Rich-rendered ta
 Every command whose example above passes `--workspace KEY` also accepts the flag as optional. The effective workspace is resolved in this order, highest precedence first:
 
 1. `--workspace` flag.
-2. `$KANBEROO_WORKSPACE` environment variable.
-3. `default_workspace` field in `$KANBEROO_CONFIG_DIR/config.toml` (written by `kb workspace use`).
+2. `$KANBAROO_WORKSPACE` environment variable.
+3. `default_workspace` field in `$KANBAROO_CONFIG_DIR/config.toml` (written by `kb workspace use`).
 
 If none of the three supplies a value the command exits 1 with a hint pointing at all three paths. `kb workspace use <key>` validates the key against the live server before rewriting `config.toml`; `kb workspace current` reports the effective value and which source supplied it (`flag` / `env` / `config` / `unset`). Commands that take a positional workspace argument (`kb workspace show <key>`) are untouched and still require the argument.
 
@@ -701,11 +701,11 @@ Each phase is broken into PR-sized chunks that Claude Code can work through sequ
 
 ### 9.2 Phase 2: Web UI (v0.2.0)
 
-Single-user web UI with the same views as the TUI. Shipped in v0.2.0. The stack is a Vite + React 19 + TypeScript SPA under `packages/kanberoo-web/frontend/`. `kanberoo-api` serves the built bundle at `/ui` via `StaticFiles` plus a path-traversal-safe catch-all that falls back to `index.html` for unknown paths; auth is token paste plus `localStorage`, same-origin only. Live updates reuse the existing WebSocket events stream (`/api/v1/events`) and invalidate the relevant react-query keys on story, comment, tag, and workspace events.
+Single-user web UI with the same views as the TUI. Shipped in v0.2.0. The stack is a Vite + React 19 + TypeScript SPA under `packages/kanbaroo-web/frontend/`. `kanbaroo-api` serves the built bundle at `/ui` via `StaticFiles` plus a path-traversal-safe catch-all that falls back to `index.html` for unknown paths; auth is token paste plus `localStorage`, same-origin only. Live updates reuse the existing WebSocket events stream (`/api/v1/events`) and invalidate the relevant react-query keys on story, comment, tag, and workspace events.
 
 Milestone scope:
 
-- M1: `/ui` mount, placeholder shell, `pipx install 'kanberoo[all]'` picks up the built bundle via the `web` optional extra.
+- M1: `/ui` mount, placeholder shell, `pipx install 'kanbaroo[all]'` picks up the built bundle via the `web` optional extra.
 - M2: Vite + React 19 scaffold, react-query, zustand auth store, login screen with token paste.
 - M3: workspace list + create form, read-only kanban board shell.
 - M4: drag-to-transition on the board, WebSocket-driven invalidation, optimistic state moves.
@@ -758,7 +758,7 @@ _No open questions for phase 1. All design questions from the initial draft were
 6. **Story templates** → deferred entirely from phase 1. No schema concessions.
 7. **Tag renaming in audit** → yes, surfaced in TUI audit view via the standard audit diff.
 8. **Default priority** → `none` everywhere (MCP and UI identical).
-9. **Web UI tech choice** → resolved in phase 2: Vite + React 19 + TypeScript SPA; `kanberoo-api` serves the built bundle at `/ui` (see section 9.2).
+9. **Web UI tech choice** → resolved in phase 2: Vite + React 19 + TypeScript SPA; `kanbaroo-api` serves the built bundle at `/ui` (see section 9.2).
 10. **Backup strategy** → `kb backup` command added to phase 1 (milestone 10).
 
 New questions may be added here as they arise during implementation.
@@ -778,9 +778,9 @@ New questions may be added here as they arise during implementation.
 
 ## Appendix B: Naming
 
-- **Project**: Kanberoo
-- **Primary binary / CLI**: `kanberoo` (short: `kb`)
-- **PyPI packages**: `kanberoo-api`, `kanberoo-tui`, `kanberoo-cli`, `kanberoo-mcp`, `kanberoo-core`, `kanberoo` (meta package pulling in everything)
-- **Docker image**: `kanberoo/kanberoo` (or your preferred registry namespace)
-- **Config directory**: `~/.kanberoo/`
-- **Default database file**: `~/.kanberoo/kanberoo.db`
+- **Project**: Kanbaroo
+- **Primary binary / CLI**: `kanbaroo` (short: `kb`)
+- **PyPI packages**: `kanbaroo-api`, `kanbaroo-tui`, `kanbaroo-cli`, `kanbaroo-mcp`, `kanbaroo-core`, `kanbaroo` (meta package pulling in everything)
+- **Docker image**: `kanbaroo/kanbaroo` (or your preferred registry namespace)
+- **Config directory**: `~/.kanbaroo/`
+- **Default database file**: `~/.kanbaroo/kanbaroo.db`

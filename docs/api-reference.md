@@ -1,8 +1,8 @@
-# Kanberoo REST API
+# Kanbaroo REST API
 
 Generated file. Do not edit by hand. Run `uv run python scripts/build_api_reference.py` to regenerate.
 
-Source: `packages/kanberoo-api/src/kanberoo_api/` OpenAPI schema.
+Source: `packages/kanbaroo-api/src/kanbaroo_api/` OpenAPI schema.
 
 
 ## Endpoints
