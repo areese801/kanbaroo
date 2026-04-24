@@ -254,6 +254,8 @@ source set_creds.sh            # exports UV_PUBLISH_TOKEN
 make publish                   # builds, uploads, tags
 ```
 
+Post-publish validation (do this every release, not just when something feels off): in a fresh shell, run `pipx install --include-deps 'kanberoo[all]==<new version>'` and then `pipx runpip kanberoo list | grep kanberoo`. You should see all seven `kanberoo-*` packages (`kanberoo`, `-core`, `-api`, `-cli`, `-tui`, `-mcp`, `-web`) each at the new version. If `kanberoo-web` is missing, the top-level `[all]` extra has regressed (it should include `"kanberoo-api[web]"`, not plain `"kanberoo-api"`) — the v0.2.0 packaging bug was exactly this and it was invisible to Docker users because `uv sync --all-packages` follows workspace membership, not extras. 30-second check; catches a class of silent failures.
+
 - `set_creds.sh` sits at the repo root and is gitignored via the `set_creds*.sh` pattern. It exports `UV_PUBLISH_TOKEN` before `make publish` runs `uv publish`. Do not commit it or quote it in chat.
 - Always merge to `main` via PR before publishing. Never publish from an unmerged branch (the `tag` step pushes against the current `HEAD`).
 - Each package has its own version in its own `pyproject.toml`. The top-level meta-package version tracks the overall release and is what `make tag` reads.
