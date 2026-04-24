@@ -31,7 +31,7 @@ from kanbaroo_core.id_generator import generate_human_id
 from kanbaroo_core.queries import live
 from kanbaroo_core.time import utc_now_iso
 
-__version__ = "0.1.0"
+__version__ = "0.2.2"
 
 __all__ = [
     "Actor",
