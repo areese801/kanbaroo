@@ -6,7 +6,7 @@ Create Date: 2026-04-17
 
 This migration creates the full schema documented in ``docs/spec.md``
 section 3.3. Enum values are inlined so the migration is self-contained
-and survives subsequent reorganisations of the Python enum classes.
+and survives subsequent reorganizations of the Python enum classes.
 """
 
 from collections.abc import Sequence

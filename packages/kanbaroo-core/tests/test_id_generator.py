@@ -4,7 +4,7 @@ Atomic ``{KEY}-{N}`` allocation.
 ``generate_human_id`` increments ``workspaces.next_issue_num`` and
 returns the previous value formatted as ``{KEY}-{N}``. The allocation
 must be safe under concurrent inserts; this test only exercises the
-sequential happy path because the Postgres-only locking behaviour cannot
+sequential happy path because the Postgres-only locking behavior cannot
 be exercised against SQLite.
 """
 

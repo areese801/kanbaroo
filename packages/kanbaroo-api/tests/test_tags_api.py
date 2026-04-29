@@ -3,7 +3,7 @@ Integration tests for the ``/api/v1/tags`` REST surface.
 
 Covers workspace-scoped CRUD, collision handling, the no-ETag contract
 (tags do not carry a ``version`` column), and the soft-delete-detaches
-behaviour at the HTTP level.
+behavior at the HTTP level.
 """
 
 from typing import Any

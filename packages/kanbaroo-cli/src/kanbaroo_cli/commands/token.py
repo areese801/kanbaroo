@@ -8,6 +8,8 @@ user to save it.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -73,6 +75,29 @@ def list_tokens(
     )
 
 
+def _write_token_file(path: Path, plaintext: str) -> None:
+    """
+    Write ``plaintext`` to ``path`` with mode ``0600`` and a trailing
+    newline.
+
+    Parent directories are created with ``mkdir -p`` semantics; existing
+    parent directories keep their permissions untouched. The file is
+    opened with ``os.open`` so the ``0600`` mode is set atomically at
+    create time rather than racing a separate ``chmod``.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(plaintext)
+        if not plaintext.endswith("\n"):
+            fh.write("\n")
+    # ``os.open`` only honors the mode argument when the file is newly
+    # created; an existing file keeps its prior bits. Force ``0600``
+    # afterwards so re-runs cannot leave looser permissions in place.
+    os.chmod(path, 0o600)
+
+
 @app.command("create")
 def create_token(
     name: str = typer.Option(..., "--name", help="Human-readable token label."),
@@ -85,6 +110,14 @@ def create_token(
         ...,
         "--actor-id",
         help="Actor id (free-form label, e.g. 'outer-claude').",
+    ),
+    output_file: Path | None = typer.Option(
+        None,
+        "--output-file",
+        help=(
+            "Also write the plaintext token to PATH (mode 0600, "
+            "trailing newline). Parent dirs are created if missing."
+        ),
     ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
@@ -105,21 +138,27 @@ def create_token(
             exit_on_api_error(exc)
         body = response.json()
 
+    if output_file is not None:
+        _write_token_file(output_file, body["plaintext"])
+
     if as_json:
         print_json(body)
         return
     stdout_console.print(
         "[bold yellow]Save this token now. It will not be shown again.[/bold yellow]"
     )
+    rows = [
+        ["plaintext", body["plaintext"]],
+        ["id", body["id"]],
+        ["name", body["name"]],
+        ["actor_type", body["actor_type"]],
+        ["actor_id", body["actor_id"]],
+    ]
+    if output_file is not None:
+        rows.append(["written to", str(output_file)])
     print_table(
         columns=["field", "value"],
-        rows=[
-            ["plaintext", body["plaintext"]],
-            ["id", body["id"]],
-            ["name", body["name"]],
-            ["actor_type", body["actor_type"]],
-            ["actor_id", body["actor_id"]],
-        ],
+        rows=rows,
         title=f"created token {body['name']}",
     )
 

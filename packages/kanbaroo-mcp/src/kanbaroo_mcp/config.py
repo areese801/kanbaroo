@@ -23,10 +23,12 @@ Token resolution order (first hit wins):
    variable. This is the recommended pattern.
 3. ``$KANBAROO_MCP_TOKEN`` directly.
 4. ``$KANBAROO_TOKEN`` (shared with the CLI).
-5. ``$KANBAROO_CONFIG_DIR/config.toml`` or ``~/.kanbaroo/config.toml``:
-   the ``token`` field from the CLI's config file. This is usually a
-   human token, so using it triggers an ``actor_type`` warning at
-   startup.
+5. ``token_file`` field in ``config.toml``: read the token from the
+   referenced file (with ``~`` expansion). This is the dotfiles-friendly
+   pattern — keep ``config.toml`` in version control and the file at
+   ``token_file`` outside it.
+6. ``token`` field in ``config.toml`` (deprecated; emits a
+   ``DeprecationWarning`` and a one-line stderr note when used).
 
 API URL resolution order:
 
@@ -42,7 +44,9 @@ message listing the resolution order the caller tried.
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -142,6 +146,28 @@ def resolve_config(
     return McpConfig(api_url=api_url, token=token, token_source=token_source)
 
 
+def _read_token_file(raw_path: str, config_path: Path) -> str:
+    """
+    Read a token from the file referenced by ``token_file`` in
+    ``config.toml``.
+
+    Expands ``~``. Strips trailing whitespace (so an editor that
+    appended a newline does not corrupt the bearer token). Raises
+    :class:`ConfigError` if the file is missing or empty.
+    """
+    expanded = Path(raw_path).expanduser()
+    if not expanded.is_file():
+        raise ConfigError(
+            f"token_file {expanded} (referenced by {config_path}) does not exist."
+        )
+    contents = expanded.read_text(encoding="utf-8").rstrip()
+    if not contents:
+        raise ConfigError(
+            f"token_file {expanded} (referenced by {config_path}) is empty."
+        )
+    return contents
+
+
 def _resolve_token(
     *,
     cli_token: str | None,
@@ -173,14 +199,32 @@ def _resolve_token(
     if shared:
         return shared, "$KANBAROO_TOKEN"
 
+    token_file_raw = toml_data.get("token_file")
+    if isinstance(token_file_raw, str) and token_file_raw:
+        token_value = _read_token_file(token_file_raw, config_path)
+        return token_value, f"{config_path}:token_file"
+
     raw = toml_data.get("token")
     if isinstance(raw, str) and raw:
+        warnings.warn(
+            (
+                f"The 'token' field in {config_path} is deprecated. "
+                "Use 'token_file' to point at a file outside version control."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        print(
+            f"kanbaroo-mcp: 'token' in {config_path} is deprecated; use 'token_file'.",
+            file=sys.stderr,
+        )
         return raw, f"{config_path}:token"
 
     raise ConfigError(
         "could not resolve a Kanbaroo API token. Tried, in order: "
         "--token, --token-env, $KANBAROO_MCP_TOKEN, $KANBAROO_TOKEN, "
-        f"and the 'token' field in {config_path}."
+        f"the 'token_file' field in {config_path}, and the deprecated "
+        f"'token' field in {config_path}."
     )
 
 

@@ -2,7 +2,7 @@
 Aggregate every MCP tool definition into a single registry.
 
 Each sub-module builds a list of :class:`ToolDef` records. The server
-pulls :func:`build_registry` to get the full catalogue and register it
+pulls :func:`build_registry` to get the full catalog and register it
 with the MCP SDK. Splitting tools by resource keeps each file short and
 makes the mental map from spec §6.2 to code straightforward.
 """

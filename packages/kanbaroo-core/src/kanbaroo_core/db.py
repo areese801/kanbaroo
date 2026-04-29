@@ -5,7 +5,7 @@ Models live in :mod:`kanbaroo_core.models` and inherit from :class:`Base`
 defined here. Importing this module does not pull in any models; importing
 :mod:`kanbaroo_core.models` does.
 
-The ``engine_for_url`` helper standardises engine creation so SQLite always
+The ``engine_for_url`` helper standardizes engine creation so SQLite always
 has foreign-key enforcement turned on (off by default in the SQLite client
 library) and so the engine is consistent between application code, tests,
 and Alembic migrations.

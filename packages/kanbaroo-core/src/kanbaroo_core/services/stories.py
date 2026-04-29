@@ -10,7 +10,7 @@ with ``action="state_changed"``.
 
 Per ``docs/spec.md`` section 10 Q3, reassigning a story's ``epic_id``
 to an epic in a different workspace is rejected as a
-:class:`ValidationError`. Users who want that behaviour should create a
+:class:`ValidationError`. Users who want that behavior should create a
 new story in the target workspace and link it rather than silently
 move the original.
 
@@ -83,7 +83,7 @@ class InvalidStateTransitionError(ValidationError):
 
 def _dump(story: Story) -> dict[str, Any]:
     """
-    Serialise a :class:`Story` row into a JSON-friendly dict for the
+    Serialize a :class:`Story` row into a JSON-friendly dict for the
     audit log.
     """
     return StoryRead.model_validate(story).model_dump(mode="json")
@@ -427,17 +427,17 @@ def find_similar_stories(
     include_deleted: bool = False,
 ) -> list[Story]:
     """
-    Return stories in ``workspace_id`` whose title normalises to the
+    Return stories in ``workspace_id`` whose title normalizes to the
     same canonical form as ``title``.
 
     The comparison key comes from
     :func:`kanbaroo_core.text.normalize_for_comparison`, so casing,
     punctuation, and whitespace differences collide while distinct
     word content does not. Returns an empty list when ``title``
-    normalises to an empty string (no signal to compare against).
+    normalizes to an empty string (no signal to compare against).
 
     At single-user scale loading every workspace title and filtering
-    in Python is fine. If volume grows, store the normalised form
+    in Python is fine. If volume grows, store the normalized form
     in a dedicated column and add an index over
     ``(workspace_id, normalized_title)`` so this query becomes a
     single equality lookup.
@@ -486,7 +486,7 @@ def transition_story(
 
     # Pydantic's ``use_enum_values=True`` means the transport-layer
     # payload may hand us the raw string rather than the StoryState
-    # member; normalise so downstream comparisons and ``emit_audit``
+    # member; normalize so downstream comparisons and ``emit_audit``
     # always see the enum.
     target_state = StoryState(to_state)
     current_state = StoryState(story.state)

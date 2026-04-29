@@ -605,11 +605,11 @@ def test_similar_stories_endpoint_empty(client: TestClient, human_auth: Any) -> 
     assert body == {"items": [], "next_cursor": None}
 
 
-def test_similar_stories_endpoint_matches_normalised_title(
+def test_similar_stories_endpoint_matches_normalized_title(
     client: TestClient, human_auth: Any
 ) -> None:
     """
-    Stories whose normalised title matches the query are returned.
+    Stories whose normalized title matches the query are returned.
     Casing and punctuation differences still match.
     """
     ws = _create_workspace(client, human_auth)

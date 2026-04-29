@@ -201,7 +201,7 @@ def create_story(
     """
     Create a new story.
 
-    Before posting we ask the server for stories with a normalised
+    Before posting we ask the server for stories with a normalized
     title equivalent to ``title``. In interactive mode (no ``--json``)
     a non-empty result triggers a yes/no prompt so the user can abort
     a likely duplicate. ``--force`` skips the prompt; ``--json`` never

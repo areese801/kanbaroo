@@ -311,7 +311,7 @@ async def test_board_m_still_works_on_focused_card(
 ):
     """
     Non-priority bindings (``m`` for move mode) still fire when a card
-    has focus. Sanity check that we did not blanket-prioritise
+    has focus. Sanity check that we did not blanket-prioritize
     everything.
     """
     stories = [_story("story-1", "KAN-1", state="backlog")]

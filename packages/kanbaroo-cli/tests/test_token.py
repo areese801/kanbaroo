@@ -4,6 +4,7 @@ Tests for ``kb token``.
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +80,48 @@ def test_token_create(mock_api: Any, config_dir: Path, runner: CliRunner) -> Non
         "actor_type": "claude",
         "actor_id": "outer-claude",
     }
+
+
+def test_token_create_output_file(
+    mock_api: Any,
+    config_dir: Path,
+    runner: CliRunner,
+    tmp_path: Path,
+) -> None:
+    """
+    ``kb token create --output-file`` writes the plaintext to disk
+    with mode 0600, a trailing newline, and creates parent dirs as
+    needed.
+    """
+    del config_dir
+    mock_api.json(
+        "POST",
+        "/tokens",
+        body=_token_body(plaintext="kbr_outputfile"),
+        status_code=201,
+    )
+    target = tmp_path / "tokens" / "claude-foo"
+    result = runner.invoke(
+        app,
+        [
+            "token",
+            "create",
+            "--name",
+            "mcp",
+            "--actor-type",
+            "claude",
+            "--actor-id",
+            "claude-foo",
+            "--output-file",
+            str(target),
+        ],
+    )
+    assert result.exit_code == 0, result.stderr
+    assert target.read_text(encoding="utf-8") == "kbr_outputfile\n"
+    mode_bits = stat.S_IMODE(target.stat().st_mode)
+    assert mode_bits == 0o600, oct(mode_bits)
+    assert "kbr_outputfile" in result.stdout
+    assert "written to" in result.stdout
 
 
 def test_token_revoke(mock_api: Any, config_dir: Path, runner: CliRunner) -> None:

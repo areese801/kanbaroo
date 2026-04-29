@@ -46,7 +46,7 @@ function tagNameFromDiff(diff: Record<string, unknown> | null): string | null {
   return null;
 }
 
-function summariseEvent(event: AuditEvent): JSX.Element {
+function summarizeEvent(event: AuditEvent): JSX.Element {
   const actor = ACTOR_LABELS[event.actor_type];
   if (event.action === 'state_changed') {
     const before =
@@ -180,7 +180,7 @@ export default function AuditTrail({ storyId }: AuditTrailProps): JSX.Element {
               aria-hidden="true"
               style={{ backgroundColor: ACTOR_DOT_COLOR[event.actor_type] }}
             />
-            <span className="audit-summary">{summariseEvent(event)}</span>
+            <span className="audit-summary">{summarizeEvent(event)}</span>
             <span className="audit-timestamp muted small">{event.occurred_at}</span>
           </li>
         ))}

@@ -60,3 +60,6 @@ data/
 *.db-journal
 *.db-shm
 *.db-wal
+
+# Trusty-cage scratch artifacts (cage patches, etc.)
+.trusty-cage-patches/

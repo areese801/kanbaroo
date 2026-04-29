@@ -70,7 +70,7 @@ _MIRROR: dict[LinkType, LinkType] = {
 
 def _dump(linkage: Linkage) -> dict[str, Any]:
     """
-    Serialise a :class:`Linkage` row into a JSON-friendly dict for the
+    Serialize a :class:`Linkage` row into a JSON-friendly dict for the
     audit log.
     """
     return LinkageRead.model_validate(linkage).model_dump(mode="json")

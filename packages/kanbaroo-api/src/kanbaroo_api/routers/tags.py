@@ -73,7 +73,7 @@ def find_similar_tags(
     _actor: Actor = Depends(resolve_actor),
 ) -> TagListResponse:
     """
-    Return tags in ``workspace_id`` whose name is normalised
+    Return tags in ``workspace_id`` whose name is normalized
     equivalent to ``name``.
 
     Used by clients to warn the user before creating a duplicate
@@ -122,7 +122,7 @@ def update_tag(
     actor: Actor = Depends(resolve_actor),
 ) -> TagRead:
     """
-    Rename or recolour a tag. No ``If-Match`` (tags do not carry a
+    Rename or recolor a tag. No ``If-Match`` (tags do not carry a
     version column, per spec §3.3).
     """
     tag = tag_service.update_tag(

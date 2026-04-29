@@ -5,7 +5,7 @@ The REST API rejects mutations whose ``If-Match`` version does not
 match the current row with a ``412 Precondition Failed``. When an
 outer agent is driving the board there is a real chance that the
 entity it read a moment ago was just touched by a human in the TUI;
-in that case the right behaviour is to refetch, re-apply the patch,
+in that case the right behavior is to refetch, re-apply the patch,
 and try once more.
 
 :func:`with_retry_on_412` wraps a mutation callable in exactly that

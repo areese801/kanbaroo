@@ -2,7 +2,7 @@
 Unit tests for :mod:`kanbaroo_core.events`.
 
 The event bus is a simple in-process fan-out broker: these tests
-exercise its fan-out behaviour, subscriber lifecycle, and backpressure
+exercise its fan-out behavior, subscriber lifecycle, and backpressure
 policy (drop, do not block) without touching the database.
 """
 

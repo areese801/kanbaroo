@@ -48,7 +48,7 @@ from kanbaroo_core.time import utc_now_iso
 
 def _dump(tag: Tag) -> dict[str, Any]:
     """
-    Serialise a :class:`Tag` row into a JSON-friendly dict for the
+    Serialize a :class:`Tag` row into a JSON-friendly dict for the
     audit log.
     """
     return TagRead.model_validate(tag).model_dump(mode="json")
@@ -312,7 +312,7 @@ def find_similar_tags(
     include_deleted: bool = False,
 ) -> list[Tag]:
     """
-    Return tags in ``workspace_id`` whose name normalises to the same
+    Return tags in ``workspace_id`` whose name normalizes to the same
     canonical form as ``name``.
 
     Mirrors :func:`kanbaroo_core.services.stories.find_similar_stories`

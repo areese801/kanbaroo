@@ -1,5 +1,5 @@
 """
-Tests for :class:`kanbaroo_core.actor.Actor` behaviour.
+Tests for :class:`kanbaroo_core.actor.Actor` behavior.
 
 The ``Actor`` dataclass is a small value type but it is threaded through
 the whole service layer, so its invariants (frozen, hashable, value

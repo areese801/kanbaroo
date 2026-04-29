@@ -200,7 +200,7 @@ Source: `packages/kanbaroo-api/src/kanbaroo_api/` OpenAPI schema.
   - Response `422` (Validation Error) -> `HTTPValidationError`
 
 - `PATCH /api/v1/tags/{tag_id}` - Update Tag
-    Rename or recolour a tag. No ``If-Match`` (tags do not carry a
+    Rename or recolor a tag. No ``If-Match`` (tags do not carry a
     version column, per spec §3.3).
   - Request body: `TagUpdate`
   - Response `200` (Successful Response) -> `TagRead`
@@ -686,7 +686,7 @@ Server response for any tag read.
 ### `TagUpdate`
 
 Payload for ``PATCH /tags/{id}``. Both fields are optional so a tag
-can be renamed or recoloured independently.
+can be renamed or recolored independently.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

@@ -133,7 +133,7 @@ def _add_bytes(archive: tarfile.TarFile, name: str, data: bytes) -> None:
 
 def _write_parquet(table: Table, rows: list[dict[str, Any]]) -> bytes:
     """
-    Serialise ``rows`` to Parquet bytes using ``table``'s derived schema.
+    Serialize ``rows`` to Parquet bytes using ``table``'s derived schema.
 
     An explicit schema means empty tables still round-trip with the
     correct column names and types, so external readers (DuckDB,

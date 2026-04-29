@@ -44,7 +44,7 @@ MAX_PAGE_LIMIT = 200
 
 def _dump(epic: Epic) -> dict[str, Any]:
     """
-    Serialise an :class:`Epic` row into a JSON-friendly dict for the
+    Serialize an :class:`Epic` row into a JSON-friendly dict for the
     audit log.
     """
     return EpicRead.model_validate(epic).model_dump(mode="json")
@@ -315,11 +315,11 @@ def find_similar_epics(
     include_deleted: bool = False,
 ) -> list[Epic]:
     """
-    Return epics in ``workspace_id`` whose title normalises to the
+    Return epics in ``workspace_id`` whose title normalizes to the
     same canonical form as ``title``.
 
     Mirrors :func:`kanbaroo_core.services.stories.find_similar_stories`;
-    see that docstring for the normalisation rules and the scaling
+    see that docstring for the normalization rules and the scaling
     note.
     """
     needle = normalize_for_comparison(title)

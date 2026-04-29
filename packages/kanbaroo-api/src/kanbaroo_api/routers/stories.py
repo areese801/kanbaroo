@@ -103,7 +103,7 @@ def find_similar_stories(
     _actor: Actor = Depends(resolve_actor),
 ) -> StoryListResponse:
     """
-    Return stories in ``workspace_id`` whose title is normalised
+    Return stories in ``workspace_id`` whose title is normalized
     equivalent to ``title`` (see
     :func:`kanbaroo_core.text.normalize_for_comparison`).
 

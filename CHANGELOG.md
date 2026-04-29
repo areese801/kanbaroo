@@ -4,6 +4,48 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added
+
+- New `token_file` field for `~/.kanbaroo/config.toml`. Holds a path
+  (with `~` expansion) to a file containing the bearer token; the
+  loader strips trailing whitespace and reads it on demand. This is
+  the dotfiles-friendly pattern: keep `config.toml` in version
+  control and the file at `token_file` outside it. The MCP server's
+  resolution order is `--token` → `--token-env` → `$KANBAROO_MCP_TOKEN`
+  → `$KANBAROO_TOKEN` → `token_file` → deprecated `token`. The CLI's
+  loader follows the same order minus the MCP-only flags.
+- `kb token create --output-file PATH` writes the freshly-minted
+  plaintext token to `PATH` with mode `0600` and a trailing newline.
+  Parent directories are created on the fly. The plaintext is still
+  echoed to stdout once; the file is the dotfiles-friendly secondary
+  copy.
+- `docs/deployment-dogfood.md` documents the recommended single-user
+  layout: per-project `claude` tokens issued via
+  `kb token create --output-file`, host-bind-mounted SQLite under
+  `~/Library/Application Support/Kanbaroo/`, nightly snapshots via
+  launchd + `kb backup`, and a restore procedure.
+
+### Changed
+
+- `docker-compose.yml` now bind-mounts the host directory referenced
+  by `$KANBAROO_DATA_DIR` at `/data/` inside the container instead of
+  using the `kanbaroo-data` named Docker volume. The variable is
+  required by the compose file (`:?...` form errors out cleanly if it
+  is unset). `kb server start` exports a platform-appropriate default
+  before invoking docker-compose so most users never set the variable
+  by hand: macOS → `~/Library/Application Support/Kanbaroo`, Linux →
+  `${XDG_DATA_HOME:-$HOME/.local/share}/kanbaroo`, Windows →
+  `%LOCALAPPDATA%\Kanbaroo` (with a `%USERPROFILE%`-rooted fallback),
+  and other Unixes → `$HOME/.local/share/kanbaroo`. Resolution lives in
+  the new `kanbaroo_cli.paths` module. The container's
+  `KANBAROO_DATABASE_URL` is unchanged (`sqlite:////data/kanbaroo.db`).
+  Existing users on the named volume must copy the database manually;
+  the move is documented under "Container bind-mount" in
+  `docs/deployment-dogfood.md` (no automated migration script).
+- The `token` field in `~/.kanbaroo/config.toml` is now deprecated.
+  Reading it triggers a `DeprecationWarning` and a one-line stderr
+  note from both the CLI and the MCP server. Migrate to `token_file`.
+
 ### Removed
 
 - Retired the seven `kanberoo*` PyPI rename stubs published at v0.2.2
@@ -51,7 +93,7 @@ Grooming + packaging patch on top of v0.2.0. No behavioral changes to the REST A
 
 ### Docs
 
-- `README.md` audited against the shipped v0.2.0 code. Corrections: drop the `uv run kanberoo-api` alternative from the Quickstart (it crashes without `$KANBEROO_DATABASE_URL`); drop `--wait` from the web-UI first-boot drill (it demands a `config.toml` that does not exist yet on first boot); normalise `uv run kanberoo-tui` in the Quickstart to the direct `kanberoo-tui` entry point for pip-installed users; add `kanberoo-api[web]` to the Installation list; add a new "Configuration" section documenting every `KANBEROO_*` environment variable the codebase reads; correct "five packages" to "six packages" in the Development section; restyle the architecture diagram so the Web UI node is no longer marked as pending/phase-2.
+- `README.md` audited against the shipped v0.2.0 code. Corrections: drop the `uv run kanberoo-api` alternative from the Quickstart (it crashes without `$KANBEROO_DATABASE_URL`); drop `--wait` from the web-UI first-boot drill (it demands a `config.toml` that does not exist yet on first boot); normalize `uv run kanberoo-tui` in the Quickstart to the direct `kanberoo-tui` entry point for pip-installed users; add `kanberoo-api[web]` to the Installation list; add a new "Configuration" section documenting every `KANBEROO_*` environment variable the codebase reads; correct "five packages" to "six packages" in the Development section; restyle the architecture diagram so the Web UI node is no longer marked as pending/phase-2.
 
 ## [0.2.0] - 2026-04-22
 
@@ -133,7 +175,7 @@ Initial PyPI release. Everything listed below shipped in this version. All six p
 - `docs/spec.md` section 4.2 documents the three new `similar` endpoints alongside the existing read endpoints.
 
 ### Tests
-- 7 new core unit tests on `normalize_for_comparison` (lowercasing, punctuation stripping, idempotency, empty/all-punctuation degenerate cases, Unicode whitespace, Unicode letters preserved). 11 new service-layer tests for `find_similar_stories`/`find_similar_epics`/`find_similar_tags` covering exact matches, case-insensitive matches, punctuation-insensitive matches, no matches, cross-workspace isolation, soft-delete behaviour, and empty-normalisation safety. 7 new API tests for the three `similar` endpoints (empty result, matched result, 401 without auth). CLI tests for `kb story create`, `kb epic create`, and `kb tag create` covering `--force`, prompt-accept, prompt-reject (exit 1, no POST), and `--json` warnings. MCP tests for `create_story` and `create_epic` covering both the no-warnings and warnings-folded result shapes. TUI pilot tests for the duplicate-confirm modal (cancel and confirm branches), the `f`/`F` filter cycle on the board, the `s` sort toggle on the board, the `s` sort toggle on the epic detail mini-board, and a comment-only search match plus a unit test on the scorer that the comments field pulls weight.
+- 7 new core unit tests on `normalize_for_comparison` (lowercasing, punctuation stripping, idempotency, empty/all-punctuation degenerate cases, Unicode whitespace, Unicode letters preserved). 11 new service-layer tests for `find_similar_stories`/`find_similar_epics`/`find_similar_tags` covering exact matches, case-insensitive matches, punctuation-insensitive matches, no matches, cross-workspace isolation, soft-delete behavior, and empty-normalization safety. 7 new API tests for the three `similar` endpoints (empty result, matched result, 401 without auth). CLI tests for `kb story create`, `kb epic create`, and `kb tag create` covering `--force`, prompt-accept, prompt-reject (exit 1, no POST), and `--json` warnings. MCP tests for `create_story` and `create_epic` covering both the no-warnings and warnings-folded result shapes. TUI pilot tests for the duplicate-confirm modal (cancel and confirm branches), the `f`/`F` filter cycle on the board, the `s` sort toggle on the board, the `s` sort toggle on the epic detail mini-board, and a comment-only search match plus a unit test on the scorer that the comments field pulls weight.
 
 ### Fixed
 - `kb tag list` now hides soft-deleted tags by default and prints a one-line hint (`Note: N soft-deleted tag(s) not shown. Use --include-deleted to see them.`) when any exist, so operators are not silently missing rows. `--include-deleted` opts back in and dims the deleted names so they are visually distinct from live rows.
@@ -150,9 +192,9 @@ Initial PyPI release. Everything listed below shipped in this version. All six p
 ### Fixed
 - TUI editor flow (`c` comment, `e` edit description, `n` new story) no longer crashes on vim exit. The default editor runner previously wrapped `with app.suspend():` inside `asyncio.to_thread`, entering Textual's suspend context on a worker thread and leaving the terminal state inconsistent when the subprocess unwound. The runner now enters `app.suspend()` on the event loop and offloads only the blocking `subprocess.run` to a thread, which is what Textual's driver attach/detach logic assumes, and calls `app.refresh()` on the way out so the first frame after vim exits repaints cleanly.
 - TUI low-priority card badge color changed from bright blue (low contrast on most terminal themes) to sage green (`#7faa3a`) so it remains distinct from the card background without reading as "urgent" or stealing attention from medium/high priority.
-- Spelling: "initialised" is now "initialized" in the `kb init` Rich panel (user-visible) and the TUI's internal "AsyncApiClient not initialized yet" error message. No behavior change.
+- Spelling: "initialized" is now "initialized" in the `kb init` Rich panel (user-visible) and the TUI's internal "AsyncApiClient not initialized yet" error message. No behavior change.
 - TUI navigation bindings (`h`/`j`/`k`/`l` and `q`) on the board, workspace list, epic list, and epic detail screens now carry `priority=True` so they fire even when a descendant widget (story card, data table) holds focus. Previously Vim-style navigation and back/quit were silently swallowed in real terminal sessions. Bindings that legitimately yield to focused widgets (`m`, `enter`, `n`, `/`, `a`, `E`, `?`, `r`) still do. Workspace list `q` binding now targets `app.quit` explicitly so the Screen-to-App action fallback works under every Textual dispatch path.
-- Case-insensitive by-key lookups in the service layer. `services.stories.get_story_by_human_id`, `services.epics.get_epic_by_human_id`, and `services.workspaces.get_workspace_by_key` now match with `func.upper` on both sides so every client (REST, CLI, TUI, MCP, future) can address `KAN-3`, `kan-3`, or `Kan-3` interchangeably. Fixed at the service layer so no client has to remember to normalise.
+- Case-insensitive by-key lookups in the service layer. `services.stories.get_story_by_human_id`, `services.epics.get_epic_by_human_id`, and `services.workspaces.get_workspace_by_key` now match with `func.upper` on both sides so every client (REST, CLI, TUI, MCP, future) can address `KAN-3`, `kan-3`, or `Kan-3` interchangeably. Fixed at the service layer so no client has to remember to normalize.
 
 ### Changed
 - TUI board and epic-detail column navigation (`h`/`l`/`left`/`right`) now skip empty columns. With cards in Backlog, Todo, and Done but empty In-Progress and In-Review, pressing `l` from Todo lands on Done in a single keystroke instead of walking through each empty column. A no-op when every column to the requested side is empty.
@@ -175,7 +217,7 @@ Initial PyPI release. Everything listed below shipped in this version. All six p
 
 ### Added
 - Documentation polish for milestone 17 (spec section 9.1). `README.md` rewritten from scaffold-era stub into a real user-facing introduction: positioning, four-surface overview, the spec section 2.1 architecture diagram (mermaid, rendered natively by GitHub), installation modes, a full cold-start quickstart (`kb init` through `kanberoo-tui`), an MCP setup pointer, and links to every authoritative doc. New `docs/api-reference.md` auto-generated from the FastAPI OpenAPI schema: grouped by router tag, every operation lists summary, description, request body schema, and every response status code with its schema name; every Pydantic schema in `components.schemas` is rendered as a four-column field table (name, type, required, description) or enum value list. New `docs/mcp-setup.md` covers what the MCP server is, the claude-typed token flow (`kb token create --actor-type claude`), the four-line `mcpServers` block, a smoke test that calls `list_workspaces` and what a good response looks like, and a one-line table of every tool the MCP server exposes. New `scripts/build_api_reference.py` (stdlib + FastAPI only) imports `kanberoo_api.app.create_app`, pulls `app.openapi()`, and writes the Markdown reference deterministically so CI can reproduce it.
-- Workspace export for milestone 16 (spec section 2.4) in `kanberoo-core` and `kanberoo-api`. `services.export.export_workspace` builds a `tar.gz` archive in memory containing a `schema_version.json` manifest (alembic revision, workspace identity, created-at), `tables/*.parquet` per table scoped to the target workspace (via pyarrow), and a self-contained `kanberoo.db` SQLite copy with the workspace's rows. The SQLite copy uses a fresh temp database so `api_tokens` can be dropped before serialising; credential material never ships with an export. Linkages that touch a workspace story or epic are included on both ends (cross-workspace linkages are allowed per spec section 10 Q2). `GET /api/v1/workspaces/{id}/export` streams the archive with `Content-Type: application/gzip` and a `KAN-export-<iso>.tar.gz` disposition; `?include_deleted=true` opts in to soft-deleted rows (off by default). Adds `pyarrow>=15` to `kanberoo-core` runtime deps.
+- Workspace export for milestone 16 (spec section 2.4) in `kanberoo-core` and `kanberoo-api`. `services.export.export_workspace` builds a `tar.gz` archive in memory containing a `schema_version.json` manifest (alembic revision, workspace identity, created-at), `tables/*.parquet` per table scoped to the target workspace (via pyarrow), and a self-contained `kanberoo.db` SQLite copy with the workspace's rows. The SQLite copy uses a fresh temp database so `api_tokens` can be dropped before serializing; credential material never ships with an export. Linkages that touch a workspace story or epic are included on both ends (cross-workspace linkages are allowed per spec section 10 Q2). `GET /api/v1/workspaces/{id}/export` streams the archive with `Content-Type: application/gzip` and a `KAN-export-<iso>.tar.gz` disposition; `?include_deleted=true` opts in to soft-deleted rows (off by default). Adds `pyarrow>=15` to `kanberoo-core` runtime deps.
 - Audit read surface for spec section 4.2 in `kanberoo-core` and `kanberoo-api`. `services.audit.list_audit` returns newest-first events with optional filters (`entity_type`, `entity_id`, `actor_type`, `actor_id`, `since`) and opaque cursor pagination wrapping `(occurred_at, id)` so ties on `occurred_at` are stable. `list_audit_for_entity` is a convenience wrapper behind the dedicated path. New router `GET /api/v1/audit` plus `GET /api/v1/audit/entity/{entity_type}/{entity_id}` return `{items, next_cursor}` envelopes. `AuditEventRead.diff` now parses the stored JSON string into a structured `{"before": ..., "after": ...}` dict so clients do not double-decode. The TUI's existing audit feed and story-detail audit tab, and the MCP `get_audit_trail` tool, all start working end-to-end once this endpoint is live.
 - `GET /api/v1/workspaces/by-key/{key}` for parity with `/stories/by-key` and `/epics/by-key`. Backed by `services.workspaces.get_workspace_by_key` (raises `NotFoundError` on miss; hides soft-deleted rows unless `include_deleted=true`). Lets clients and MCP resolve `KAN` to a full workspace without a list scan.
 - TUI epic list and detail screens for spec section 8.1 (deferred stretch from cage I). `EpicListScreen` is a `DataTable` of a workspace's epics (human_id, title, state, story_count, updated_at) reached from the workspace list via the new `E` keybinding; bindings `j`/`k`/`enter`/`r`/`esc`/`q`/`?`. `EpicDetailScreen` is a mini-board scoped to the epic's stories, reusing `BoardColumn` and `StoryCard` from the cage H board so layout and focus stay consistent; bindings `h`/`l`/`←`/`→` (columns), `j`/`k`/`↓`/`↑` (cards), `enter` (story detail), `m` then `b/t/p/r/d` (transition via `POST /stories/{id}/transition` with `If-Match`), `r` (refresh), `esc`/`q` (back), `?` (help). Both screens subscribe to the WS fan-out and refetch on `epic.*` or `story.*` events that touch them. New `OpenEpicList` and `EpicSelected` messages route the flow through the app.

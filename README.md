@@ -89,7 +89,7 @@ For a human walking up cold, all the way from install to a running board:
 # 1. Install
 pip install 'kanbaroo[all]'
 
-# 2. Initialise config dir, apply migrations, mint your first token
+# 2. Initialize config dir, apply migrations, mint your first token
 kb init
 
 # 3. Start the server (docker compose under the hood)
@@ -123,6 +123,8 @@ Kanbaroo reads settings from `$KANBAROO_CONFIG_DIR/config.toml` (default `~/.kan
 | `KANBAROO_API_PORT` | api server | Uvicorn bind port. Default: `8080`. |
 | `KANBAROO_COMPOSE_FILE` | `kb server` | Path to a non-default `docker-compose.yml` (useful for CI). |
 | `KANBAROO_MCP_LOG_LEVEL` | mcp | `INFO` by default; `DEBUG` for verbose MCP logs. |
+
+For a long-lived single-user setup with per-project token attribution, host-bind-mounted SQLite, and nightly snapshots, see [`docs/deployment-dogfood.md`](docs/deployment-dogfood.md).
 
 ## Web UI
 

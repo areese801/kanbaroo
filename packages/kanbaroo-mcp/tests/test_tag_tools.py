@@ -3,7 +3,7 @@ Tests for tag-scoped tools.
 
 Both add_tag_to_story and remove_tag_from_story do a by-name
 resolution in the story's workspace before touching the association
-endpoint; these tests pin that behaviour.
+endpoint; these tests pin that behavior.
 """
 
 from __future__ import annotations

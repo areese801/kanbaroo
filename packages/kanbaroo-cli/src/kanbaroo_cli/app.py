@@ -84,7 +84,7 @@ def version_command() -> None:
 
 app.command(
     name="init",
-    help="Initialise the Kanbaroo config directory, database, and first token.",
+    help="Initialize the Kanbaroo config directory, database, and first token.",
 )(init_command.init)
 
 app.command(

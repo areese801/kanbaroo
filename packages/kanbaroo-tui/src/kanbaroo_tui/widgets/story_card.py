@@ -9,8 +9,8 @@ subclass, no nested widgets) so focus handling stays obvious.
 
 See ``docs/spec.md`` section 8.1 for the card content contract:
 human id, title, priority badge, actor badge for the last state
-transition, and tag chips. Tag colours are rendered as plain labels
-when the story list response does not carry colour data; cage H does
+transition, and tag chips. Tag colors are rendered as plain labels
+when the story list response does not carry color data; cage H does
 not fan out extra requests to the tags endpoint.
 """
 
