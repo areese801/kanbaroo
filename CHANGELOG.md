@@ -4,6 +4,13 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Removed
+
+- Retired the seven `kanberoo*` PyPI rename stubs published at v0.2.2
+  alongside the project rename. Install `kanbaroo` (or `kanbaroo[all]`)
+  directly. Pinned installs of `kanberoo==0.2.2` will no longer resolve;
+  the GitHub repo redirect from `areese801/kanberoo` is unaffected.
+
 ## [0.2.2] - 2026-04-24
 
 Project renamed from `kanberoo` to `kanbaroo`. The name is a portmanteau of `kangaroo` + `kanban`; the middle letter should have been `a` from the start. Pure rename, no behavior changes.
