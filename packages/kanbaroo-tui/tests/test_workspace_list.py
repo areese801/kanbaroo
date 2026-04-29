@@ -143,7 +143,7 @@ async def test_refresh_still_fires_on_workspace_list(
 ):
     """
     Sanity check that the non-priority ``r`` binding still fires on
-    the workspace list; we didn't blanket-prioritise everything.
+    the workspace list; we didn't blanket-prioritize everything.
     """
     mock_api.json(
         "GET",

@@ -4,7 +4,7 @@ Epic-related MCP tools.
 * :func:`list_epics_tool`: list epics under a workspace.
 * :func:`create_epic_tool`: create a new epic.
 * :func:`update_epic_tool`: patch title/description/state (state=open
-  or closed drives the close/reopen behaviour).
+  or closed drives the close/reopen behavior).
 
 Convenience close/reopen endpoints (``POST /epics/{id}/close``) are
 folded into ``update_epic`` by accepting ``state`` directly: the outer

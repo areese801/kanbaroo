@@ -747,7 +747,7 @@ class BoardScreen(Screen[None]):
         unchanged (or deleting everything) aborts with a flash so a
         stray ``n`` keypress never creates a junk story.
 
-        Before posting we ask the server for stories with a normalised
+        Before posting we ask the server for stories with a normalized
         title equivalent to the proposed one. Any matches push a
         :class:`DuplicateConfirm` modal so the user can abort the
         likely duplicate; the create POST runs from the modal's

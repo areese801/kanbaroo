@@ -180,7 +180,7 @@ class EventBus:
         async generator is closed (through ``aclose()``, cancellation
         of the consuming task, or garbage collection). The cleanest
         way to unsubscribe is to cancel the task running the
-        ``async for`` loop; Python's generator finalisation then runs
+        ``async for`` loop; Python's generator finalization then runs
         the teardown code synchronously.
 
         ``capacity`` overrides the bus-level queue capacity for a

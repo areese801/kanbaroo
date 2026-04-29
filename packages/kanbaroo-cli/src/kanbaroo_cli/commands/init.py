@@ -96,7 +96,7 @@ def init(
     ),
 ) -> None:
     """
-    Initialise Kanbaroo's local config, database, and first API token.
+    Initialize Kanbaroo's local config, database, and first API token.
     """
     config_dir = _default_config_dir()
     database_url = _default_database_url(config_dir)

@@ -14,10 +14,27 @@ If the config file is missing the loader raises
 Rich-rendered message pointing the user at ``kb init``. We deliberately
 do not fall back to a partial config: if ``config.toml`` does not exist
 the user has not finished setup and we should say so loudly.
+
+Token resolution order (first hit wins):
+
+1. ``$KANBAROO_TOKEN`` environment variable.
+2. ``token_file`` field in ``config.toml`` (path read with ``~``
+   expansion; trailing whitespace is stripped). This is the
+   dotfiles-friendly pattern: keep ``config.toml`` in version
+   control, point ``token_file`` at a path that is gitignored.
+3. ``token`` field in ``config.toml`` (deprecated; emits a
+   ``DeprecationWarning`` and a one-line stderr note).
+
+The MCP server's loader (``kanbaroo_mcp.config``) extends this order
+with ``--token``, ``--token-env``, and ``$KANBAROO_MCP_TOKEN`` ahead
+of ``$KANBAROO_TOKEN``; the CLI only reads env + file because it is
+interactive and uses the same shared env var as the TUI.
 """
 
 import os
+import sys
 import tomllib
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -97,6 +114,72 @@ def default_config_path() -> Path:
     return default_config_dir() / "config.toml"
 
 
+def _read_token_file(raw_path: str, config_path: Path) -> str:
+    """
+    Read a token from the path referenced by ``token_file`` in
+    ``config.toml``.
+
+    Expands ``~``. Strips trailing whitespace so an editor's
+    auto-appended newline does not corrupt the bearer token. Raises
+    :class:`ConfigMalformedError` (matching the existing
+    ``token``-missing behavior) if the file is missing or empty.
+    """
+    expanded = Path(raw_path).expanduser()
+    if not expanded.is_file():
+        raise ConfigMalformedError(
+            f"token_file {expanded} (referenced by {config_path}) does not exist."
+        )
+    contents = expanded.read_text(encoding="utf-8").rstrip()
+    if not contents:
+        raise ConfigMalformedError(
+            f"token_file {expanded} (referenced by {config_path}) is empty."
+        )
+    return contents
+
+
+def _resolve_token(
+    raw: dict[str, Any],
+    config_path: Path,
+) -> str | None:
+    """
+    Apply the CLI's token-resolution order against environment + TOML.
+
+    Returns the resolved plaintext token, or ``None`` if no source
+    surfaced one. The caller maps ``None`` into the standard "missing
+    field" :class:`ConfigMalformedError` so existing error-handling
+    paths keep working unchanged.
+
+    Order: ``$KANBAROO_TOKEN`` → TOML ``token_file`` → TOML ``token``
+    (deprecated). The deprecation path emits a ``DeprecationWarning``
+    and a one-line stderr note so the user knows to migrate.
+    """
+    env_token = os.environ.get("KANBAROO_TOKEN")
+    if env_token:
+        return env_token
+
+    token_file_raw = raw.get("token_file")
+    if isinstance(token_file_raw, str) and token_file_raw:
+        return _read_token_file(token_file_raw, config_path)
+
+    legacy = raw.get("token")
+    if isinstance(legacy, str) and legacy:
+        warnings.warn(
+            (
+                f"The 'token' field in {config_path} is deprecated. "
+                "Use 'token_file' to point at a file outside version control."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        print(
+            f"kanbaroo: 'token' in {config_path} is deprecated; use 'token_file'.",
+            file=sys.stderr,
+        )
+        return legacy
+
+    return None
+
+
 def load_config(
     path: Path | None = None,
     *,
@@ -108,19 +191,15 @@ def load_config(
     ``$KANBAROO_API_URL``, ``$KANBAROO_TOKEN``, and
     ``$KANBAROO_DATABASE_URL`` each override the matching TOML field
     when set; this lets the test suite and CI pipelines drive the CLI
-    without touching a user's config.
+    without touching a user's config. ``token`` itself follows the
+    extended resolution order documented in the module docstring
+    (env → ``token_file`` → deprecated ``token``).
 
     ``api_url`` and ``token`` are always required.
     ``require_database_url`` defaults to ``True``; pass ``False`` via
     :func:`load_config_api_only` for commands that only hit the HTTP
     API and never open the database directly (e.g.
     ``kb server start --wait``).
-
-    TODO: broader CLI split needed between API-client commands (that
-    speak HTTP) and direct-DB-client commands (``kb backup``) so the
-    required-field set is implicit from the command rather than
-    manually wired per call site. Track alongside the API-client vs
-    direct-DB-client modes note in TODO.md.
 
     Raises :class:`ConfigNotFoundError` when the file is absent and
     :class:`ConfigMalformedError` when it is present but incomplete.
@@ -133,7 +212,7 @@ def load_config(
         raw = tomllib.load(fh)
 
     api_url = os.environ.get("KANBAROO_API_URL") or raw.get("api_url")
-    token = os.environ.get("KANBAROO_TOKEN") or raw.get("token")
+    token = _resolve_token(raw, resolved_path)
     database_url_raw = os.environ.get("KANBAROO_DATABASE_URL") or raw.get(
         "database_url"
     )

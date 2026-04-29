@@ -53,13 +53,18 @@ docker compose logs -f kanbaroo-api
 
 ### `kb server start` runs docker-compose, not a foreground uvicorn
 
-`uv run kb server start` (and the pipx-installed `kb server start`) is a thin wrapper around `docker compose up -d`. It does NOT run uvicorn in your terminal. The API runs inside the `kanbaroo-api` container with its SQLite DB on a named volume (`kanbaroo-data`, mounted at `/data/kanbaroo.db`). Any `$KANBAROO_CONFIG_DIR` or `KANBAROO_DATABASE_URL` env vars set in your host shell are irrelevant to the container.
+`uv run kb server start` (and the pipx-installed `kb server start`) is a thin wrapper around `docker compose up -d`. It does NOT run uvicorn in your terminal. The API runs inside the `kanbaroo-api` container with its SQLite DB on a host bind-mount at `$KANBAROO_DATA_DIR`, mapped to `/data/` inside the container. `kb server start` exports a platform-appropriate default for `$KANBAROO_DATA_DIR` if you have not exported it yourself; see `docs/deployment-dogfood.md` for the per-platform paths and the override knob. Any `$KANBAROO_CONFIG_DIR` or `KANBAROO_DATABASE_URL` env vars set in your host shell are irrelevant to the container.
 
 ### First-boot container setup
 
-The container's DB volume is blank on first boot. Host-side `kb init` writes to a different SQLite file and does not help. Run migrations + token minting INSIDE the container:
+The bind-mounted host directory is blank on first boot. Host-side `kb init` writes to a different SQLite file and does not help. Run migrations + token minting INSIDE the container:
 
 ```bash
+# 0. Make sure the host directory exists so the bind-mount lands somewhere.
+#    `kb server start` does this for you; this line covers the case where
+#    you are running `docker compose up -d` directly.
+mkdir -p "${KANBAROO_DATA_DIR}"
+
 # 1. Apply migrations against the container DB
 docker compose exec -e KANBAROO_DATABASE_URL="sqlite:////data/kanbaroo.db" \
   kanbaroo-api \
@@ -71,7 +76,22 @@ docker compose exec -e KANBAROO_DATABASE_URL="sqlite:////data/kanbaroo.db" \
   uv run --no-dev kb init
 ```
 
-Token value is printed by `kb init` and does not repeat; copy it. Paste it into the web UI's login form or save it to `~/.kanbaroo/config.toml` (at minimum: `api_url = "http://localhost:8080"` and `token = "kbr_..."`) for TUI access. Note: `docker compose up -d` after an image rebuild recreates the container and wipes its writable filesystem (including `/root/.kanbaroo/config.toml`); the named volume at `/data` persists, so the DB survives but you'll need to re-run `kb init` to regenerate the container-side config.
+The `KANBAROO_DATABASE_URL` value is unchanged from earlier releases; the
+four-slash form is the absolute path inside the container. Token value
+is printed by `kb init` and does not repeat; copy it. Paste it into the
+web UI's login form or save it to `~/.kanbaroo/config.toml` (at minimum:
+`api_url = "http://localhost:8080"` and either `token_file = "..."`
+pointing at a 0600 file outside version control or, for legacy setups,
+`token = "kbr_..."`) for TUI access. The container's writable filesystem
+(including `/root/.kanbaroo/config.toml`) is wiped on every `docker
+compose up -d` after an image rebuild — re-run `kb init` to regenerate
+it. The DB persists because the bind-mount lives on the host.
+
+See [`docs/deployment-dogfood.md`](docs/deployment-dogfood.md) for the
+recommended dogfood layout — including the per-platform default paths
+for `$KANBAROO_DATA_DIR`, per-project tokens via
+`kb token create --output-file`, nightly snapshots, and the restore
+procedure.
 
 ### Web UI development
 

@@ -50,7 +50,7 @@ def generate_token_plaintext() -> str:
     Generate a fresh, cryptographically secure bearer token.
 
     The token is 32 bytes of randomness from :mod:`secrets` encoded with
-    URL-safe base64 and prefixed with ``kbr_`` so it is recognisable if
+    URL-safe base64 and prefixed with ``kbr_`` so it is recognizable if
     it leaks into a log line.
     """
     return TOKEN_PREFIX + secrets.token_urlsafe(32)

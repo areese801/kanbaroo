@@ -141,7 +141,7 @@ def create_epic(
     """
     Create a new epic in ``workspace``.
 
-    Mirrors ``kb story create``: a normalised-title check runs against
+    Mirrors ``kb story create``: a normalized-title check runs against
     the workspace before posting and warns the user about likely
     duplicates. ``--force`` skips the prompt; ``--json`` never prompts
     but folds the matches into a ``warnings`` field.

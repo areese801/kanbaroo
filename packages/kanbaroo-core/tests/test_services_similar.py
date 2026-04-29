@@ -3,7 +3,7 @@ Service-layer tests for the duplicate-detection helpers
 (``find_similar_stories`` / ``find_similar_epics`` / ``find_similar_tags``).
 
 The helpers do no I/O beyond the workspace they're scoped to, so the
-focus is on the normalisation rules and workspace isolation: a tag
+focus is on the normalization rules and workspace isolation: a tag
 named ``bug`` in workspace A must not match a tag of the same name
 in workspace B.
 """
@@ -160,9 +160,9 @@ def test_find_similar_stories_skips_soft_deleted_by_default(
     assert len(matches) == 1
 
 
-def test_find_similar_stories_empty_normalisation(session: Session) -> None:
+def test_find_similar_stories_empty_normalization(session: Session) -> None:
     """
-    A title that normalises to the empty string returns no matches
+    A title that normalizes to the empty string returns no matches
     so callers do not flood the user with everything in the
     workspace.
     """

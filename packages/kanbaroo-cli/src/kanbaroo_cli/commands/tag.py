@@ -34,9 +34,9 @@ def _swatch_markup(color: str | None) -> str:
     """
     Build a Rich-markup color swatch for the ``color`` column.
 
-    Renders a two-space background-coloured block followed by the hex
+    Renders a two-space background-colored block followed by the hex
     text so the listing shows both the swatch and the raw value. Tags
-    with no colour get a plain dash so the column never collapses to
+    with no color get a plain dash so the column never collapses to
     an empty cell.
     """
     if not color:
@@ -151,7 +151,7 @@ def create_tag(
     """
     Create a workspace-scoped tag.
 
-    Mirrors ``kb story create``: a normalised-name check runs first
+    Mirrors ``kb story create``: a normalized-name check runs first
     so visually similar tags (``UI`` vs ``ui``) trigger an interactive
     confirmation. ``--force`` skips the prompt; ``--json`` never
     prompts but folds the matches into a ``warnings`` field.

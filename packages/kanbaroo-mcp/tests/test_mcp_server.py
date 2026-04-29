@@ -4,7 +4,7 @@ Tests for the MCP server's dispatch layer.
 These drive the server's ``call_tool`` handler directly (no stdio
 transport) to verify error translation, tool not-found, and that a
 happy-path tool call returns structured content the MCP SDK then
-serialises into a CallToolResult.
+serializes into a CallToolResult.
 """
 
 from __future__ import annotations

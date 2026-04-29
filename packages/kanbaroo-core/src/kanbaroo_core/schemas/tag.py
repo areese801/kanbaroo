@@ -17,7 +17,7 @@ class TagCreate(WriteModel):
 class TagUpdate(WriteModel):
     """
     Payload for ``PATCH /tags/{id}``. Both fields are optional so a tag
-    can be renamed or recoloured independently.
+    can be renamed or recolored independently.
     """
 
     name: str | None = None

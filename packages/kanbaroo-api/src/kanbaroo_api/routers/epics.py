@@ -77,11 +77,11 @@ def find_similar_epics(
     _actor: Actor = Depends(resolve_actor),
 ) -> EpicListResponse:
     """
-    Return epics in ``workspace_id`` whose title is normalised
+    Return epics in ``workspace_id`` whose title is normalized
     equivalent to ``title``.
 
     Mirrors ``GET /workspaces/{id}/stories/similar``; see that
-    endpoint's docstring for the normalisation rules and intended
+    endpoint's docstring for the normalization rules and intended
     use case (warn-on-create at the client).
     """
     rows = epic_service.find_similar_epics(

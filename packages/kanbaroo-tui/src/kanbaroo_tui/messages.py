@@ -1,7 +1,7 @@
 """
 Textual :class:`~textual.message.Message` subclasses used by the TUI.
 
-Messages are the cross-cutting signalling primitive Textual exposes to
+Messages are the cross-cutting signaling primitive Textual exposes to
 widgets and screens. Defining them centrally keeps the vocabulary in
 one place and makes it easy to search for every publisher and every
 handler from one file.

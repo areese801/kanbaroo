@@ -203,9 +203,11 @@ def config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.delenv("KANBAROO_API_URL", raising=False)
     monkeypatch.delenv("KANBAROO_TOKEN", raising=False)
     monkeypatch.delenv("KANBAROO_DATABASE_URL", raising=False)
+    token_path = tmp_path / "token"
+    token_path.write_text("kbr_test\n", encoding="utf-8")
     (tmp_path / "config.toml").write_text(
         'api_url = "http://test.invalid"\n'
-        'token = "kbr_test"\n'
+        f'token_file = "{token_path}"\n'
         f'database_url = "sqlite:///{tmp_path / "kanbaroo.db"}"\n',
         encoding="utf-8",
     )

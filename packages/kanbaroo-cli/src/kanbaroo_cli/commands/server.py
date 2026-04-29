@@ -11,6 +11,12 @@ users already have ``docker compose`` on PATH as the supported entry
 point per ``docker-compose.yml`` at the project root. When
 ``$KANBAROO_COMPOSE_FILE`` is set we pass ``-f`` so the caller can
 target a non-default file (useful for CI).
+
+The compose file requires ``$KANBAROO_DATA_DIR`` (it bind-mounts that
+host path at ``/data`` inside the container). We resolve a
+platform-aware default via :mod:`kanbaroo_cli.paths` and inject it
+into the subprocess env when the user has not exported it explicitly,
+then ``mkdir -p`` the path so the bind-mount has somewhere to land.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ import typer
 
 from kanbaroo_cli.client import API_PREFIX
 from kanbaroo_cli.context import require_config_api_only
+from kanbaroo_cli.paths import resolve_data_dir
 from kanbaroo_cli.rendering import stderr_console, stdout_console
 
 app = typer.Typer(
@@ -50,12 +57,34 @@ def _compose_command(subcommand: list[str]) -> list[str]:
     return argv
 
 
+def _compose_env() -> dict[str, str]:
+    """
+    Build the environment for the docker-compose subprocess.
+
+    The compose file requires ``$KANBAROO_DATA_DIR``. If the user
+    already exported it we leave the value alone; otherwise we drop in
+    the platform-appropriate default from :func:`resolve_data_dir`.
+    Either way the directory is ``mkdir -p``'d so the bind-mount has
+    somewhere to land. Other env vars are inherited verbatim from the
+    parent process.
+    """
+    env = os.environ.copy()
+    user_value = env.get("KANBAROO_DATA_DIR")
+    if user_value:
+        data_dir_str = user_value
+    else:
+        data_dir_str = str(resolve_data_dir())
+        env["KANBAROO_DATA_DIR"] = data_dir_str
+    os.makedirs(data_dir_str, exist_ok=True)
+    return env
+
+
 def _run_compose(subcommand: list[str]) -> None:
     """
     Invoke docker compose with the given subcommand and check the
     result. Any non-zero exit propagates to the user.
     """
-    subprocess.run(_compose_command(subcommand), check=True)
+    subprocess.run(_compose_command(subcommand), check=True, env=_compose_env())
 
 
 def _poll_until_ready(

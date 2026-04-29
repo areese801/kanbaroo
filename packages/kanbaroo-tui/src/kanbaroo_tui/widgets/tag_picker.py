@@ -11,7 +11,7 @@ host's code path short and makes the modal self-contained for tests.
 Protocol
 --------
 
-The modal is parameterised with:
+The modal is parameterized with:
 
 * ``tags``: list of tag dicts from ``GET /workspaces/{id}/tags``.
 * ``attached_tag_ids``: ids currently associated with the story.

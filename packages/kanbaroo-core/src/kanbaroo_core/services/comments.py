@@ -41,7 +41,7 @@ from kanbaroo_core.time import utc_now_iso
 
 def _dump(comment: Comment) -> dict[str, Any]:
     """
-    Serialise a :class:`Comment` row into a JSON-friendly dict for the
+    Serialize a :class:`Comment` row into a JSON-friendly dict for the
     audit log.
     """
     return CommentRead.model_validate(comment).model_dump(mode="json")

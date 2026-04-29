@@ -43,7 +43,7 @@ MAX_PAGE_LIMIT = 200
 
 def _dump(workspace: Workspace) -> dict[str, Any]:
     """
-    Serialise a :class:`Workspace` row into a JSON-friendly dict for
+    Serialize a :class:`Workspace` row into a JSON-friendly dict for
     the audit log.
     """
     return WorkspaceRead.model_validate(workspace).model_dump(mode="json")

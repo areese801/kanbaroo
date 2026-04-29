@@ -320,7 +320,7 @@ def test_reopen_already_open_is_noop(session: Session) -> None:
 
 def test_close_epic_stale_version_rejected(session: Session) -> None:
     """
-    ``close_epic`` honours ``expected_version`` even when the
+    ``close_epic`` honors ``expected_version`` even when the
     transition would be a no-op, so a stale ``If-Match`` is rejected
     with :class:`VersionConflictError`.
     """

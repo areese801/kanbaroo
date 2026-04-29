@@ -224,7 +224,7 @@ class AuditFeedScreen(Screen[None]):
 
     async def action_reconcile(self) -> None:
         """
-        Keybinding handler for ``r`` (labelled "Refresh" in the
+        Keybinding handler for ``r`` (labeled "Refresh" in the
         binding list for consistency with every other screen). The
         internal method name stays as "reconcile" because the action
         also reconciles events missed while the screen was

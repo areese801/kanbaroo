@@ -63,7 +63,7 @@ def _remove_tag_from_story(
     """
     Handler for ``remove_tag_from_story``. Idempotent: removing a tag
     that is not associated is a silent no-op, matching the server's
-    behaviour. If the tag name does not exist in the workspace at all
+    behavior. If the tag name does not exist in the workspace at all
     we return a friendly confirmation rather than an error because the
     operation is conceptually a no-op anyway.
     """

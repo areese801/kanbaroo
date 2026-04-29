@@ -1,7 +1,7 @@
 """
 Story-tag association table.
 
-This is a pure many-to-many link with no surrogate primary key. Modelled
+This is a pure many-to-many link with no surrogate primary key. Modeled
 as a Core :class:`Table` rather than an ORM class because nothing in the
 codebase needs to load it as an entity.
 """

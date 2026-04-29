@@ -6,10 +6,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - kanbaroo-data:/data
+      - ${KANBAROO_DATA_DIR:?KANBAROO_DATA_DIR is required - see docs/deployment-dogfood.md}:/data
     environment:
       KANBAROO_DATABASE_URL: "sqlite:////data/kanbaroo.db"
     restart: unless-stopped
-
-volumes:
-  kanbaroo-data:
