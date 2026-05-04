@@ -301,3 +301,151 @@ def test_resolve_config_env_beats_token_file(tmp_path: Path) -> None:
     )
     assert cfg.token == "kbr_env"
     assert cfg.token_source == "$KANBAROO_TOKEN"
+
+
+def test_resolve_config_cli_token_file_happy_path(tmp_path: Path) -> None:
+    """
+    ``--token-file`` reads the file with trailing whitespace stripped
+    and reports ``--token-file`` as the source.
+    """
+    token_path = tmp_path / "tok"
+    token_path.write_text("kbr_from_cli_file\n", encoding="utf-8")
+    cfg = resolve_config(
+        cli_api_url="http://flag.invalid",
+        cli_token=None,
+        cli_token_env=None,
+        cli_token_file=str(token_path),
+        env={},
+        config_path=tmp_path / "missing.toml",
+    )
+    assert cfg.token == "kbr_from_cli_file"
+    assert cfg.token_source == "--token-file"
+
+
+def test_resolve_config_cli_token_file_missing_is_fatal(tmp_path: Path) -> None:
+    """
+    ``--token-file`` pointing at a non-existent path is a hard
+    :class:`ConfigError` whose message names the flag.
+    """
+    target = tmp_path / "does-not-exist"
+    with pytest.raises(ConfigError) as excinfo:
+        resolve_config(
+            cli_api_url="http://flag.invalid",
+            cli_token=None,
+            cli_token_env=None,
+            cli_token_file=str(target),
+            env={},
+            config_path=tmp_path / "missing.toml",
+        )
+    message = str(excinfo.value)
+    assert "--token-file" in message
+    assert "does not exist" in message
+
+
+def test_resolve_config_cli_token_file_empty_is_fatal(tmp_path: Path) -> None:
+    """
+    ``--token-file`` pointing at an empty (or whitespace-only) file is a
+    hard :class:`ConfigError`.
+    """
+    target = tmp_path / "tok"
+    target.write_text("   \n", encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        resolve_config(
+            cli_api_url="http://flag.invalid",
+            cli_token=None,
+            cli_token_env=None,
+            cli_token_file=str(target),
+            env={},
+            config_path=tmp_path / "missing.toml",
+        )
+    message = str(excinfo.value)
+    assert "--token-file" in message
+    assert "is empty" in message
+
+
+def test_resolve_config_cli_token_file_expands_tilde(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    ``--token-file`` paths starting with ``~`` are expanded via
+    ``$HOME``.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    token_path = tmp_path / "tok"
+    token_path.write_text("kbr_tilde_cli\n", encoding="utf-8")
+    cfg = resolve_config(
+        cli_api_url="http://flag.invalid",
+        cli_token=None,
+        cli_token_env=None,
+        cli_token_file="~/tok",
+        env={},
+        config_path=tmp_path / "missing.toml",
+    )
+    assert cfg.token == "kbr_tilde_cli"
+    assert cfg.token_source == "--token-file"
+
+
+def test_resolve_config_cli_token_file_beats_env_and_config(tmp_path: Path) -> None:
+    """
+    ``--token-file`` is preferred over ``$KANBAROO_MCP_TOKEN``,
+    ``$KANBAROO_TOKEN``, and the ``token_file`` field in
+    ``config.toml``.
+    """
+    cli_token_path = tmp_path / "cli"
+    cli_token_path.write_text("kbr_from_cli_file\n", encoding="utf-8")
+    config_token_path = tmp_path / "from-config"
+    config_token_path.write_text("kbr_from_config_file\n", encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f'api_url = "http://file.invalid"\ntoken_file = "{config_token_path}"\n',
+        encoding="utf-8",
+    )
+    cfg = resolve_config(
+        cli_api_url="http://flag.invalid",
+        cli_token=None,
+        cli_token_env=None,
+        cli_token_file=str(cli_token_path),
+        env={
+            "KANBAROO_MCP_TOKEN": "kbr_mcp_env",
+            "KANBAROO_TOKEN": "kbr_shared_env",
+        },
+        config_path=config_path,
+    )
+    assert cfg.token == "kbr_from_cli_file"
+    assert cfg.token_source == "--token-file"
+
+
+def test_resolve_config_cli_token_beats_token_file(tmp_path: Path) -> None:
+    """
+    ``--token`` and ``--token-env`` still win over ``--token-file``.
+    """
+    cli_token_path = tmp_path / "cli"
+    cli_token_path.write_text("kbr_from_cli_file\n", encoding="utf-8")
+    cfg = resolve_config(
+        cli_api_url="http://flag.invalid",
+        cli_token="from-flag",
+        cli_token_env=None,
+        cli_token_file=str(cli_token_path),
+        env={},
+        config_path=tmp_path / "missing.toml",
+    )
+    assert cfg.token == "from-flag"
+    assert cfg.token_source == "--token"
+
+
+def test_resolve_config_cli_token_env_beats_token_file(tmp_path: Path) -> None:
+    """
+    ``--token-env`` wins over ``--token-file`` when both are set.
+    """
+    cli_token_path = tmp_path / "cli"
+    cli_token_path.write_text("kbr_from_cli_file\n", encoding="utf-8")
+    cfg = resolve_config(
+        cli_api_url="http://flag.invalid",
+        cli_token=None,
+        cli_token_env="MY_TOKEN_VAR",
+        cli_token_file=str(cli_token_path),
+        env={"MY_TOKEN_VAR": "from-env-var"},
+        config_path=tmp_path / "missing.toml",
+    )
+    assert cfg.token == "from-env-var"
+    assert cfg.token_source == "$MY_TOKEN_VAR"

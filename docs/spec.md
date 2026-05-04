@@ -590,6 +590,7 @@ Designed to feel like `gh` or `tc`:
 ```bash
 # Setup
 kb init                                   # Creates config dir, generates personal token, writes ~/.kanbaroo/config.toml
+kb project init                           # Per-project: creates workspace, mints a claude token, writes ./.mcp.json
 kb config show
 kb server start                           # Start the FastAPI server (docker compose up)
 kb server stop

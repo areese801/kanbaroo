@@ -124,7 +124,7 @@ Kanbaroo reads settings from `$KANBAROO_CONFIG_DIR/config.toml` (default `~/.kan
 | `KANBAROO_COMPOSE_FILE` | `kb server` | Path to a non-default `docker-compose.yml` (useful for CI). |
 | `KANBAROO_MCP_LOG_LEVEL` | mcp | `INFO` by default; `DEBUG` for verbose MCP logs. |
 
-For a long-lived single-user setup with per-project token attribution, host-bind-mounted SQLite, and nightly snapshots, see [`docs/deployment-dogfood.md`](docs/deployment-dogfood.md).
+For a long-lived single-user setup with per-project token attribution, host-bind-mounted SQLite, and nightly snapshots, see [`docs/deployment-dogfood.md`](docs/deployment-dogfood.md). The fastest path to wire a single project up to a running Kanbaroo server is `kb project init`, which creates the workspace, mints a per-project `claude` token, and writes a project-root `.mcp.json` in one shot.
 
 ## Web UI
 

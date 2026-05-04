@@ -116,12 +116,66 @@ bits:
 Adjust the prefix to match wherever your dotfiles repo roots
 `~/.kanbaroo/`.
 
-## Per-project tokens
+## First-time per-project setup
 
-Issue a separate `claude` token for each project that talks to
-Kanbaroo. The audit log records the actor id, so distinct ids per
-project make every story-touch attributable to the right caller. The
-recipe:
+`kb project init` is the recommended one-shot for wiring a project
+directory up to a running Kanbaroo server. Run it from inside the
+project's root:
+
+```bash
+cd ~/projects/diff-donkey
+kb project init
+```
+
+It derives sensible defaults from the cwd basename, asks for one
+confirmation, and then:
+
+1. creates (or recognises, on 409) the workspace,
+2. mints a fresh `actor_type=claude` token and writes the plaintext
+   to `~/.kanbaroo/tokens/<actor-id>` at mode `0600`, and
+3. writes a project-root `.mcp.json` that points the outer Claude Code
+   at the new token via `kanbaroo-mcp --token-file <absolute path>`.
+
+The resulting `.mcp.json` looks like:
+
+```json
+{
+  "mcpServers": {
+    "kanbaroo": {
+      "type": "stdio",
+      "command": "kanbaroo-mcp",
+      "args": [
+        "--api-url",
+        "http://localhost:8080",
+        "--token-file",
+        "/home/you/.kanbaroo/tokens/claude-diff-donkey"
+      ]
+    }
+  }
+}
+```
+
+Useful flags:
+
+- `--key`, `--name`, `--actor-id`, `--token-name`: override any of the
+  derived defaults. Without these, `~/projects/diff-donkey` becomes
+  workspace key `DIFFDONK`, name `Diff Donkey`, actor id
+  `claude-diff-donkey`.
+- `--api-url`: override the configured `api_url` for the workspace +
+  token calls and for the rendered `.mcp.json`.
+- `--dry-run`: print the resolved plan without writing anything.
+- `--force`: overwrite an existing token file or `.mcp.json` without
+  prompting.
+- `--json`: emit a structured result blob (with stable `errors[].code`
+  values like `token_file_exists`) for automation.
+
+Restart Claude Code in the project after the command finishes so the
+new MCP entry activates.
+
+## Per-project tokens (manual recipe)
+
+If `kb project init` doesn't fit your setup, the equivalent manual
+recipe is:
 
 ```bash
 kb token create \
@@ -135,17 +189,26 @@ kb token create \
 creates parent directories on the fly. The token also still echoes to
 stdout once — the file is a convenience copy, not the only copy.
 
-To use the token from a project, point `$KANBAROO_TOKEN` (or
-`$KANBAROO_MCP_TOKEN`, for the MCP server) at the file's contents.
-For example, in a project's `direnv` rc:
+The MCP server's `--token-file` flag can then reference the file
+directly, with no shell-init plumbing required:
 
-```bash
-export KANBAROO_TOKEN="$(cat ~/.kanbaroo/tokens/claude-projectA)"
+```json
+{
+  "mcpServers": {
+    "kanbaroo": {
+      "command": "kanbaroo-mcp",
+      "args": [
+        "--api-url", "http://localhost:8080",
+        "--token-file", "/home/you/.kanbaroo/tokens/claude-projectA"
+      ]
+    }
+  }
+}
 ```
 
-The MCP server's `--token-env` flag can then reference
-`KANBAROO_TOKEN` (or `KANBAROO_MCP_TOKEN`, whichever the project
-prefers) without ever embedding the plaintext in the MCP config block.
+If you prefer the env-var pattern, `--token-env KANBAROO_MCP_TOKEN`
+still works as long as the project's launching shell exports the
+variable before Claude Code starts.
 
 ## Container bind-mount
 

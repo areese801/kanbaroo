@@ -18,6 +18,7 @@ from kanbaroo_cli.commands import backup as backup_command
 from kanbaroo_cli.commands import epic as epic_command
 from kanbaroo_cli.commands import export as export_command
 from kanbaroo_cli.commands import init as init_command
+from kanbaroo_cli.commands import project as project_command
 from kanbaroo_cli.commands import server as server_command
 from kanbaroo_cli.commands import story as story_command
 from kanbaroo_cli.commands import tag as tag_command
@@ -108,6 +109,7 @@ app.add_typer(epic_command.app, name="epic")
 app.add_typer(tag_command.app, name="tag")
 app.add_typer(token_command.app, name="token")
 app.add_typer(server_command.app, name="server")
+app.add_typer(project_command.app, name="project")
 
 
 if __name__ == "__main__":

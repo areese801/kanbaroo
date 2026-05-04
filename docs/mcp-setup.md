@@ -17,21 +17,44 @@ Tool names and descriptions are crafted so an outer agent can pick the right too
 
 Mint a dedicated API token with `actor_type=claude` so every mutation the agent makes is attributed correctly. The plaintext is shown exactly once, at creation time.
 
-```bash
-kb token create --actor-type claude --actor-id outer-claude --name "claude"
-```
-
-Copy the plaintext into an environment variable rather than pasting it into a config file:
+The most ergonomic flow writes the plaintext directly to a 0600-mode file under `~/.kanbaroo/tokens/` so the agent config can reference the file by path instead of leaking the secret through the shell environment:
 
 ```bash
-export KANBAROO_MCP_TOKEN="kbr_..."
+kb token create \
+  --actor-type claude \
+  --actor-id outer-claude \
+  --name "claude" \
+  --output-file ~/.kanbaroo/tokens/outer-claude
 ```
 
-If you ever need to rotate it, revoke the old token with `kb token revoke` and mint a new one.
+If you prefer to keep the plaintext in your shell environment instead, drop the `--output-file` flag and `export KANBAROO_MCP_TOKEN="kbr_..."` from the printed value.
+
+If you ever need to rotate the token, revoke the old one with `kb token revoke` and mint a new one.
 
 ## 2. Add the server to your agent config
 
-The config block for Claude Desktop / Claude Code's `mcpServers` section:
+The recommended config block uses `--token-file` because the path is stable across machines, the secret never lands in shell history or process environment, and the file is gitignored by convention. For Claude Desktop / Claude Code's `mcpServers` section:
+
+```json
+{
+  "mcpServers": {
+    "kanbaroo": {
+      "command": "kanbaroo-mcp",
+      "args": [
+        "--api-url", "http://localhost:8080",
+        "--token-file", "/home/you/.kanbaroo/tokens/outer-claude"
+      ]
+    }
+  }
+}
+```
+
+Flags:
+
+- `--api-url`: base URL of the Kanbaroo server. Use `http://localhost:8080` for the default docker compose setup.
+- `--token-file`: absolute path to a file whose contents are the API token plaintext. Trailing whitespace is stripped and `~` is expanded. Recommended for per-project setups since it needs no shell-init plumbing.
+
+If you cannot use `--token-file` for some reason, the equivalent shell-env pattern is still supported:
 
 ```json
 {
@@ -44,10 +67,7 @@ The config block for Claude Desktop / Claude Code's `mcpServers` section:
 }
 ```
 
-Flags:
-
-- `--api-url`: base URL of the Kanbaroo server. Use `http://localhost:8080` for the default docker compose setup.
-- `--token-env`: name of an environment variable holding the token plaintext. Preferred over `--token` because the plaintext never lands on the command line or in the config file.
+`--token-env` reads the plaintext from a named environment variable on each MCP server start, which means the agent's launching shell needs the variable exported before the agent starts.
 
 Restart the agent after editing its config. The MCP server will start on demand the first time the agent invokes a tool.
 
