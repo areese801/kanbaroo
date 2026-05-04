@@ -88,6 +88,17 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--token-file",
+        dest="token_file",
+        default=None,
+        help=(
+            "Path to a file whose contents are the API token. "
+            "Trailing whitespace is stripped and ``~`` is expanded. "
+            "Recommended for per-project setups since it needs no "
+            "shell-init plumbing."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"kanbaroo-mcp {__version__}",
@@ -313,6 +324,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             cli_api_url=args.api_url,
             cli_token=args.token,
             cli_token_env=args.token_env,
+            cli_token_file=args.token_file,
         )
     except ConfigError as exc:
         print(f"kanbaroo-mcp: {exc}", file=sys.stderr)

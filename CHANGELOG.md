@@ -24,6 +24,24 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
   `kb token create --output-file`, host-bind-mounted SQLite under
   `~/Library/Application Support/Kanbaroo/`, nightly snapshots via
   launchd + `kb backup`, and a restore procedure.
+- `kanbaroo-mcp --token-file PATH` reads the bearer token from a file
+  (with `~` expansion and trailing whitespace stripped). Slots into
+  the resolution order between `--token-env` and `$KANBAROO_MCP_TOKEN`,
+  pairs cleanly with `kb token create --output-file`, and is now the
+  recommended pattern in `docs/mcp-setup.md` for per-project setups
+  since it needs no shell-init plumbing. `--token-env` remains
+  documented as the alternative.
+- `kb project init` is the recommended one-shot for wiring a project
+  directory up to a running Kanbaroo server. It derives a workspace
+  key (uppercased, alphanumeric-only, 8-char-truncated cwd basename),
+  an `actor_id` (`claude-<slug-of-cwd>`), and a token name from the
+  cwd; creates the workspace via the REST API (idempotent on 409);
+  mints a fresh `actor_type=claude` token and writes the plaintext
+  to `~/.kanbaroo/tokens/<actor-id>` at mode 0600; and writes a
+  project-root `.mcp.json` referencing
+  `kanbaroo-mcp --token-file <absolute path>`. Supports `--dry-run`,
+  `--force`, `--json`, and per-field overrides (`--key`, `--name`,
+  `--actor-id`, `--token-name`, `--api-url`).
 
 ### Changed
 

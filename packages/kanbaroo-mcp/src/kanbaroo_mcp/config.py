@@ -20,14 +20,18 @@ Token resolution order (first hit wins):
    discouraged in real use because the plaintext ends up in the
    client's config file).
 2. ``--token-env <NAME>``: pull the plaintext from the named env
-   variable. This is the recommended pattern.
-3. ``$KANBAROO_MCP_TOKEN`` directly.
-4. ``$KANBAROO_TOKEN`` (shared with the CLI).
-5. ``token_file`` field in ``config.toml``: read the token from the
+   variable.
+3. ``--token-file <PATH>``: read the token from a file (with ``~``
+   expansion and trailing whitespace stripped). This is the
+   recommended pattern for per-project setups since it needs no
+   shell-init plumbing.
+4. ``$KANBAROO_MCP_TOKEN`` directly.
+5. ``$KANBAROO_TOKEN`` (shared with the CLI).
+6. ``token_file`` field in ``config.toml``: read the token from the
    referenced file (with ``~`` expansion). This is the dotfiles-friendly
    pattern — keep ``config.toml`` in version control and the file at
    ``token_file`` outside it.
-6. ``token`` field in ``config.toml`` (deprecated; emits a
+7. ``token`` field in ``config.toml`` (deprecated; emits a
    ``DeprecationWarning`` and a one-line stderr note when used).
 
 API URL resolution order:
@@ -113,6 +117,7 @@ def resolve_config(
     cli_api_url: str | None,
     cli_token: str | None,
     cli_token_env: str | None,
+    cli_token_file: str | None = None,
     env: dict[str, str] | None = None,
     config_path: Path | None = None,
 ) -> McpConfig:
@@ -134,6 +139,7 @@ def resolve_config(
     token, token_source = _resolve_token(
         cli_token=cli_token,
         cli_token_env=cli_token_env,
+        cli_token_file=cli_token_file,
         env=actual_env,
         toml_data=toml_data,
         config_path=path,
@@ -168,10 +174,29 @@ def _read_token_file(raw_path: str, config_path: Path) -> str:
     return contents
 
 
+def _read_cli_token_file(raw_path: str) -> str:
+    """
+    Read a token from the path passed via ``--token-file``.
+
+    Expands ``~`` and strips trailing whitespace, mirroring the
+    ``token_file`` config-toml field. Raises :class:`ConfigError` with a
+    flag-shaped message if the file is missing or empty so the operator
+    knows which CLI argument they need to fix.
+    """
+    expanded = Path(raw_path).expanduser()
+    if not expanded.is_file():
+        raise ConfigError(f"--token-file {expanded} does not exist.")
+    contents = expanded.read_text(encoding="utf-8").rstrip()
+    if not contents:
+        raise ConfigError(f"--token-file {expanded} is empty.")
+    return contents
+
+
 def _resolve_token(
     *,
     cli_token: str | None,
     cli_token_env: str | None,
+    cli_token_file: str | None,
     env: dict[str, str],
     toml_data: dict[str, object],
     config_path: Path,
@@ -190,6 +215,10 @@ def _resolve_token(
                 "environment variable is empty or unset."
             )
         return value, f"${cli_token_env}"
+
+    if cli_token_file:
+        token_value = _read_cli_token_file(cli_token_file)
+        return token_value, "--token-file"
 
     direct = env.get("KANBAROO_MCP_TOKEN")
     if direct:
@@ -222,9 +251,9 @@ def _resolve_token(
 
     raise ConfigError(
         "could not resolve a Kanbaroo API token. Tried, in order: "
-        "--token, --token-env, $KANBAROO_MCP_TOKEN, $KANBAROO_TOKEN, "
-        f"the 'token_file' field in {config_path}, and the deprecated "
-        f"'token' field in {config_path}."
+        "--token, --token-env, --token-file, $KANBAROO_MCP_TOKEN, "
+        f"$KANBAROO_TOKEN, the 'token_file' field in {config_path}, and "
+        f"the deprecated 'token' field in {config_path}."
     )
 
 
