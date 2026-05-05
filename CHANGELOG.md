@@ -4,6 +4,8 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-05
+
 ### Added
 
 - New `token_file` field for `~/.kanbaroo/config.toml`. Holds a path
