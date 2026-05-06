@@ -408,3 +408,39 @@ snapshots and the live database share the same schema unless you
 restored across a Kanbaroo major version, in which case run
 `alembic upgrade head` inside the container before pointing clients
 at it.
+
+## Installing the Kanbaroo plugin
+
+Once your Kanbaroo instance is running and a project is wired up via
+`kb project init`, install the `kanbaroo-plugin` so an outer Claude
+Code session knows how to drive the MCP tools. The plugin ships two
+skills: the general `kanbaroo-workflow` skill and the
+`kanbaroo-cage-bridge` skill that ties cage-orchestrator dispatches
+to Kanbaroo stories. Both ship together — installing the plugin
+makes both available.
+
+The plugin lives inside this monorepo at
+`packages/kanbaroo-plugin/`. The dogfood install pattern is a
+symlink into Claude Code's plugin cache:
+
+```bash
+# From the kanbaroo monorepo root (after cloning):
+ln -s "$(pwd)/packages/kanbaroo-plugin" \
+      ~/.claude/plugins/cache/kanbaroo-plugin
+```
+
+Restart Claude Code afterward. Both skills become available in every
+new session. They are passive: matching is driven by the SKILL.md
+descriptions, so the workflow skill only fires when you mention
+Kanbaroo concepts and the cage-bridge skill only fires when both
+Kanbaroo and trusty-cage's `cage-orchestrator` are active in the
+same session. On projects without the Kanbaroo MCP wired up, the
+cage-bridge no-ops and `cage-orchestrator` runs unchanged.
+
+To uninstall, remove the symlink:
+
+```bash
+rm ~/.claude/plugins/cache/kanbaroo-plugin
+```
+
+Then restart Claude Code.

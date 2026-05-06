@@ -4,6 +4,25 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added
+
+- New `packages/kanbaroo-plugin/` Claude Code plugin bundling the
+  `kanbaroo-workflow` and `kanbaroo-cage-bridge` skills. The
+  workflow skill teaches an outer Claude session how to drive the
+  Kanbaroo MCP tools (story discovery, creation, transitions,
+  comments, attribution etiquette); the cage-bridge skill mirrors
+  trusty-cage `cage-orchestrator` dispatches onto a Kanbaroo story
+  (creates or attaches a story before launch, comments on cage
+  progress with throttling, posts a `tc export` summary, and
+  captures revision instructions before they're sent to the cage's
+  inbox). The bridge no-ops gracefully on projects without the
+  Kanbaroo MCP wired up. Install via symlink:
+  `ln -s "$(pwd)/packages/kanbaroo-plugin" ~/.claude/plugins/cache/kanbaroo-plugin`,
+  then restart Claude Code. The plugin lives in the monorepo for
+  now; standalone publishing is deferred. `kb project init`'s
+  post-init checklist now points at the symlink install pattern as
+  step four.
+
 ## [0.3.0] - 2026-05-05
 
 ### Added
