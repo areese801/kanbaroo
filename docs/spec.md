@@ -2,7 +2,7 @@
 
 > A kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP layer. Designed to be useful to humans on its own, and to integrate tightly with trusty-cage for AI-driven workflows.
 
-**Status:** Draft 2. Phase 1 shipped in v0.1.0 (2026-04-19). Phase 2 web UI shipped in v0.2.0 (2026-04-22).
+**Status:** Draft 2. Phase 1 shipped in v0.1.0 (2026-04-19). Phase 2 web UI shipped in v0.2.0 (2026-04-22). Phase 3 trusty-cage / MCP UX work — `kanbaroo-mcp --token-file`, `kb project init`, and the `kanbaroo-plugin` shipping the `kanbaroo-workflow` and `kanbaroo-cage-bridge` skills — landed across v0.3.0 (2026-05-05).
 
 ---
 
