@@ -23,6 +23,20 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
   post-init checklist now points at the symlink install pattern as
   step four.
 
+### Removed
+
+- `packages/kanbaroo-plugin/` directory removed from this monorepo.
+  The plugin (workflow + cage-bridge skills) is now a standalone
+  repo at https://github.com/areese801/kanbaroo-plugin and
+  installable via Claude Code's marketplace pattern. See
+  `docs/deployment-dogfood.md` for the new install steps.
+
+### Changed
+
+- `kb project init`'s post-init checklist now points at the
+  standalone plugin's `/plugin marketplace add` install command
+  instead of the previous in-monorepo symlink approach.
+
 ## [0.3.0] - 2026-05-05
 
 ### Added

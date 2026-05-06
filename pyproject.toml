@@ -31,7 +31,6 @@ packages = ["src/kanbaroo"]
 
 [tool.uv.workspace]
 members = ["packages/*"]
-exclude = ["packages/kanbaroo-plugin"]
 
 [tool.uv.sources]
 kanbaroo-core = { workspace = true }
