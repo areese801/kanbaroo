@@ -342,9 +342,10 @@ def _post_init_steps(plan: _ProjectPlan) -> list[str]:
         f"Token file is at {plan.token_file} (mode 0600). Keep it out of git.",
         f"Workspace {plan.workspace_key} is live at "
         f"{plan.api_url.rstrip('/')}/ui (sign in with the new token).",
-        "Install the kanbaroo-plugin (skills) for the full workflow: "
-        "ln -s <your kanbaroo monorepo>/packages/kanbaroo-plugin "
-        "~/.claude/plugins/cache/kanbaroo-plugin",
+        "Install the kanbaroo Claude Code plugin for the full workflow:\n"
+        "    /plugin marketplace add areese801/kanbaroo-plugin\n"
+        "    /plugin install kanbaroo@kanbaroo-plugin\n"
+        "(run inside a Claude Code session)",
     ]
 
 

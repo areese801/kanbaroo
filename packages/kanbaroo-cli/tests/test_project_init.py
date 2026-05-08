@@ -409,7 +409,8 @@ def test_project_init_json_includes_next_steps_and_notes(
     assert len(payload["next_steps"]) == 4
     assert any("Restart Claude Code" in step for step in payload["next_steps"])
     assert any(
-        "kanbaroo-plugin" in step and "~/.claude/plugins/cache" in step
+        "/plugin marketplace add areese801/kanbaroo-plugin" in step
+        and "/plugin install kanbaroo@kanbaroo-plugin" in step
         for step in payload["next_steps"]
     )
     assert isinstance(payload["notes"], list)
