@@ -6,6 +6,23 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ### Added
 
+- README "Upgrading" section: how to upgrade the pipx-installed
+  clients and the Docker server separately, back up the database,
+  rebuild the image (`kb server start` does not rebuild), and apply
+  migrations (the API does not migrate on startup). This release needs
+  no migration.
+- TUI epic list now shows a dedicated `open` column (stories in any
+  state other than `done`) directly after `stories`. The open count is
+  derived from the same per-epic story fetch, so it adds no requests.
+  When the total overflows the 200-story probe limit, the open count
+  carries the same `+` suffix because it is a lower bound.
+- Web UI Epics page at `/workspaces/:workspaceId/epics` listing each
+  epic's key, title, state, story count, open count, and last updated
+  timestamp. Counts come from one workspace-wide story fetch grouped
+  client-side. Reachable from the workspace list (per-row "Epics"
+  button), the board header ("Epics" button), and the `E` hotkey on
+  the board. `epic.*` WebSocket events now invalidate the epics query
+  so the page stays live.
 - New `packages/kanbaroo-plugin/` Claude Code plugin bundling the
   `kanbaroo-workflow` and `kanbaroo-cage-bridge` skills. The
   workflow skill teaches an outer Claude session how to drive the
@@ -36,6 +53,13 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 - `kb project init`'s post-init checklist now points at the
   standalone plugin's `/plugin marketplace add` install command
   instead of the previous in-monorepo symlink approach.
+
+### Fixed
+
+- Web UI story and epic list queries now walk `next_cursor` until the
+  server reports no more pages. Previously they requested a single
+  page of 200 and silently dropped the rest, truncating both the board
+  and any derived counts once a workspace passed 200 stories.
 
 ## [0.3.0] - 2026-05-05
 

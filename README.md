@@ -9,7 +9,7 @@ A kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP serv
 Kanbaroo exposes the same data through five surfaces:
 
 - **TUI** (Textual) for terminal-centric humans: workspace list, kanban board, story detail, fuzzy search, audit feed.
-- **Web UI** (React SPA, served by the API at `/ui`): workspace list, kanban board with drag-to-transition, story detail, comments, tags, live WebSocket updates, keyboard shortcuts.
+- **Web UI** (React SPA, served by the API at `/ui`): workspace list, kanban board with drag-to-transition, epic list with open-story counts, story detail, comments, tags, live WebSocket updates, keyboard shortcuts.
 - **CLI** (Typer + Rich): scriptable access to every resource, JSON output for pipelines.
 - **REST + WebSocket API** (FastAPI): the source of truth. WebSocket feeds live change events; REST is always authoritative.
 - **MCP server**: lets AI agents (outer Claude in particular) read and write the board through the Model Context Protocol.
@@ -132,7 +132,7 @@ The `kanbaroo-web` package ships a Vite + React SPA that `kanbaroo-api` serves a
 
 ### First-boot inside the container
 
-`kb server start` runs `docker compose up -d`; the API runs inside the `kanbaroo-api` container with its SQLite DB on a named volume. The volume is blank on first boot, so migrations and the initial token have to happen inside the container:
+`kb server start` runs `docker compose up -d`; the API runs inside the `kanbaroo-api` container with its SQLite DB in a host directory (`$KANBAROO_DATA_DIR`) bind-mounted at `/data`. That directory is empty on first boot, so migrations and the initial token have to happen inside the container:
 
 ```bash
 # Bring the stack up
@@ -161,7 +161,11 @@ Shipped in v0.2.0:
 - Live updates via the existing `/api/v1/events` WebSocket.
 - Story creation modal (`n` on the board).
 - In-board search (`/` on the board; matches on human id prefix and title substring).
-- Keyboard shortcuts: `n` new story, `/` search, `e` edit story, `?` shortcut help, `Escape` close modal / clear search / exit edit mode.
+- Keyboard shortcuts: `n` new story, `/` search, `E` epic list, `e` edit story, `?` shortcut help, `Escape` close modal / clear search / exit edit mode.
+
+Added after v0.2.0:
+
+- Epics page (`/ui/workspaces/<id>/epics`, or `E` on the board): key, title, state, story count, open count, last updated. Open means any state other than Done.
 
 The release wheel auto-includes the built bundle, so `pipx install --include-deps 'kanbaroo[all]'` picks up the UI. Node 20+ is only required at build time for maintainers publishing a new release.
 
@@ -172,6 +176,88 @@ make web-build   # Build the SPA into packages/kanbaroo-web/src/kanbaroo_web/dis
 make web-dev     # Vite dev server on :5173, proxies /api and /api/v1/events to :8080
 make web-test    # vitest, single-shot
 ```
+
+## Upgrading
+
+A Kanbaroo install has two halves that upgrade separately:
+
+| Half | What it includes | How it upgrades |
+|------|------------------|-----------------|
+| Clients | `kb`, `kanbaroo-tui`, `kanbaroo-mcp` (installed with pipx or pip) | Reinstall the new version from PyPI |
+| Server | The `kanbaroo-api` container, including the web UI at `/ui` | Rebuild the Docker image from a checkout of the new version |
+
+Upgrading the pipx install does **not** upgrade the server container, and the reverse is also true. The web UI is part of the server, so it changes only when you rebuild the container.
+
+### 1. Read the changelog
+
+Check [`CHANGELOG.md`](CHANGELOG.md) for every version between yours and the new one. Any release that adds a database migration says so there. A major version bump (for example `0.x` to `1.0`) can include breaking API or schema changes; minor and patch releases stay backwards compatible.
+
+To see the version you have now:
+
+```bash
+pipx runpip kanbaroo list | grep kanbaroo
+```
+
+### 2. Back up the database
+
+Stop the server and copy the SQLite file before changing anything on the server side:
+
+```bash
+kb server stop
+mkdir -p "$HOME/.kanbaroo/backups"
+cp "$KANBAROO_DATA_DIR/kanbaroo.db" "$HOME/.kanbaroo/backups/kanbaroo-pre-upgrade.db"
+```
+
+If you have not exported `$KANBAROO_DATA_DIR`, use the platform default listed in [`docs/deployment-dogfood.md`](docs/deployment-dogfood.md). The restore steps are in that doc too.
+
+### 3. Upgrade the server
+
+The container is built from the source in your checkout, so move the checkout to the new release first, then rebuild:
+
+```bash
+cd /path/to/kanbaroo
+git fetch --tags
+git checkout v<new version>
+
+docker compose up -d --build
+```
+
+`kb server start` runs `docker compose up -d` **without** `--build`, so it keeps using the old image. Use `docker compose up -d --build` (with `$KANBAROO_DATA_DIR` exported) whenever the source has changed. Your database is untouched by the rebuild because it lives on the host bind-mount.
+
+### 4. Apply migrations
+
+The API does not migrate the database on its own. After every server upgrade, run:
+
+```bash
+docker compose exec -e KANBAROO_DATABASE_URL="sqlite:////data/kanbaroo.db" \
+  kanbaroo-api \
+  uv run --no-dev alembic -c /app/packages/kanbaroo-core/alembic.ini upgrade head
+```
+
+This is safe to run when nothing has changed: if the database is already at the latest revision, it does nothing. To see the current revision, replace `upgrade head` with `current`.
+
+Do not use `kb init` for this. It also applies migrations, but it mints a new token each time and refuses to run when a config already exists.
+
+### 5. Upgrade the clients
+
+```bash
+pipx install --force --include-deps 'kanbaroo[all]==<new version>'
+
+# Confirm every kanbaroo-* package landed on the new version
+pipx runpip kanbaroo list | grep kanbaroo
+```
+
+You should see all seven packages (`kanbaroo`, `-core`, `-api`, `-cli`, `-tui`, `-mcp`, `-web`) at the new version. `--include-deps` is required; without it pipx hides the `kb`, `kanbaroo-tui`, and `kanbaroo-mcp` commands.
+
+If you installed with plain pip instead, run `pip install --upgrade 'kanbaroo[all]==<new version>'` in the same environment.
+
+Restart anything that keeps a client running, such as an open TUI or a Claude session using the MCP server, so it picks up the new code.
+
+### 6. After the upgrade
+
+- Reload any open `/ui` browser tabs so they load the new web bundle. Your saved login token still works.
+- The container's own `/root/.kanbaroo/config.toml` is reset by every image rebuild. This only matters if you run `kb` commands inside the container; in that case re-run `kb init` there. Host-side configs and tokens are unaffected.
+- Within a major version the REST API only gains endpoints, so older clients keep working against a newer server. A newer client may call an endpoint an older server does not have yet, so if you upgrade the two halves on different days, do the server first.
 
 ## MCP setup
 

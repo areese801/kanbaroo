@@ -201,3 +201,216 @@ async def test_workspace_list_E_binding_routes_to_epic_list(
         await pilot.pause()
         assert isinstance(app.screen, EpicListScreen)
         await fake_ws.close()
+
+
+def _story(id_, human_id, *, state="todo", epic_id="epic-1"):
+    return {
+        "id": id_,
+        "workspace_id": "ws-1",
+        "epic_id": epic_id,
+        "human_id": human_id,
+        "title": "Story",
+        "description": None,
+        "priority": "none",
+        "state": state,
+        "state_actor_type": None,
+        "state_actor_id": None,
+        "branch_name": None,
+        "commit_sha": None,
+        "pr_url": None,
+        "created_at": "2026-04-17T00:00:00Z",
+        "updated_at": "2026-04-17T00:00:00Z",
+        "deleted_at": None,
+        "version": 1,
+    }
+
+
+def _column_labels(table: DataTable) -> list[str]:
+    return [str(column.label) for column in table.columns.values()]
+
+
+def _row_cells(table: DataTable, row_key: str) -> list[str]:
+    return [str(cell) for cell in table.get_row(row_key)]
+
+
+async def test_epic_list_has_open_column_after_stories(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    The table carries a dedicated ``open`` column directly after
+    ``stories``, with the pinned column order.
+    """
+    _seed_landing(mock_api)
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/epics",
+        body=_empty_list(),
+    )
+
+    app = KanbarooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicListScreen)
+        table = screen.query_one("#epic-table", DataTable)
+        assert _column_labels(table) == [
+            "key",
+            "title",
+            "state",
+            "stories",
+            "open",
+            "last updated",
+        ]
+        await fake_ws.close()
+
+
+async def test_epic_list_open_count_excludes_done(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    The open count is the number of fetched stories whose state is not
+    ``done``; the total still counts every story. Both come from the
+    single per-epic story request.
+    """
+    _seed_landing(mock_api)
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/epics",
+        body={"items": [_epic("epic-1", "KAN-2", title="Mixed")], "next_cursor": None},
+    )
+    stories = [
+        _story("st-1", "KAN-10", state="backlog"),
+        _story("st-2", "KAN-11", state="todo"),
+        _story("st-3", "KAN-12", state="in_progress"),
+        _story("st-4", "KAN-13", state="in_review"),
+        _story("st-5", "KAN-14", state="done"),
+        _story("st-6", "KAN-15", state="done"),
+    ]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": None},
+    )
+
+    app = KanbarooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicListScreen)
+        table = screen.query_one("#epic-table", DataTable)
+        cells = _row_cells(table, "epic-1")
+        assert cells[3] == "6"
+        assert cells[4] == "4"
+        await fake_ws.close()
+
+
+async def test_epic_list_open_count_zero_when_all_done(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    An epic whose stories are all ``done`` shows an open count of zero
+    while the total still reflects every story.
+    """
+    _seed_landing(mock_api)
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/epics",
+        body={
+            "items": [_epic("epic-1", "KAN-2", title="Finished")],
+            "next_cursor": None,
+        },
+    )
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={
+            "items": [
+                _story("st-1", "KAN-10", state="done"),
+                _story("st-2", "KAN-11", state="done"),
+                _story("st-3", "KAN-12", state="done"),
+            ],
+            "next_cursor": None,
+        },
+    )
+
+    app = KanbarooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicListScreen)
+        table = screen.query_one("#epic-table", DataTable)
+        cells = _row_cells(table, "epic-1")
+        assert cells[3] == "3"
+        assert cells[4] == "0"
+        await fake_ws.close()
+
+
+async def test_epic_list_open_count_marks_overflow(
+    mock_api, fake_ws, tui_config, client_factory, ws_factory
+):
+    """
+    When the story page overflows (``next_cursor`` present) both the
+    total and the open count carry a ``+`` suffix, because the open
+    count is a lower bound computed from the fetched page only.
+    """
+    _seed_landing(mock_api)
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/epics",
+        body={"items": [_epic("epic-1", "KAN-2", title="Huge")], "next_cursor": None},
+    )
+    stories = [
+        _story(f"st-{i}", f"KAN-{i + 10}", state="done" if i % 4 == 0 else "todo")
+        for i in range(200)
+    ]
+    mock_api.json(
+        "GET",
+        "/workspaces/ws-1/stories",
+        body={"items": stories, "next_cursor": "opaque-cursor"},
+    )
+
+    app = KanbarooTuiApp(
+        config=tui_config,
+        client_factory=client_factory,
+        ws_factory=ws_factory,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EpicListScreen)
+        table = screen.query_one("#epic-table", DataTable)
+        cells = _row_cells(table, "epic-1")
+        assert cells[3] == "200+"
+        assert cells[4] == "150+"
+        # Exactly one story request per epic: the open count must not
+        # cost an extra round-trip.
+        story_requests = [
+            r for r in mock_api.requests if r.path == "/workspaces/ws-1/stories"
+        ]
+        # One from the workspace-list landing count, one from the epic row.
+        assert len(story_requests) == 2
+        await fake_ws.close()

@@ -9,6 +9,7 @@ type Shortcut = {
 const SHORTCUTS: Shortcut[] = [
   { key: 'n', action: 'New story (on the board)' },
   { key: '/', action: 'Focus the board search' },
+  { key: 'E', action: 'Open the epic list (on the board)' },
   { key: 'e', action: 'Edit the story (on story detail)' },
   { key: '?', action: 'Show this shortcut list' },
   { key: 'Escape', action: 'Close a modal, exit edit mode, or clear search' },

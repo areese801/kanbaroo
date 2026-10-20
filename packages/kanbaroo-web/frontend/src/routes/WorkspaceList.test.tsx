@@ -32,6 +32,7 @@ function renderList() {
     <Routes>
       <Route path="/workspaces" element={<WorkspaceList />} />
       <Route path="/workspaces/:workspaceId/board" element={<div>board route</div>} />
+      <Route path="/workspaces/:workspaceId/epics" element={<div>epics route</div>} />
     </Routes>,
     { initialEntries: ['/workspaces'] },
   );
@@ -142,5 +143,35 @@ describe('WorkspaceList', () => {
 
     expect(await screen.findByText(/could not load workspaces/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+});
+
+describe('WorkspaceList epics navigation', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    useAuthStore.getState().setToken('kbr_test_token');
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    useAuthStore.getState().clearToken();
+    vi.restoreAllMocks();
+  });
+
+  it('navigates to the epics page for a workspace', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [WS_ALPHA], next_cursor: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch;
+
+    renderList();
+    await screen.findByText('Kanbaroo');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Epics for Kanbaroo' }));
+    expect(await screen.findByText('epics route')).toBeInTheDocument();
   });
 });

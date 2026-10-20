@@ -653,7 +653,7 @@ If none of the three supplies a value the command exits 1 with a hint pointing a
 - **Workspace list** (landing): all workspaces with counts.
 - **Board view**: kanban columns for a selected workspace. Columns: Backlog, Todo, In Progress, In Review, Done. Cards show title, human ID, priority badge, actor badge (human/claude icon), tag chips.
 - **Story detail**: markdown-rendered description, comment thread, linkages, tags, audit log tab.
-- **Epic list & detail**: epics as containers showing their stories grouped by state.
+- **Epic list & detail**: the list shows each epic's key, title, state, story count, open count (stories in any state other than `done`), and last updated timestamp; the detail shows the epic's stories grouped by state.
 - **Audit feed**: global tail of events, filterable.
 
 ### 8.2 Interaction Principles
@@ -702,7 +702,7 @@ Each phase is broken into PR-sized chunks that Claude Code can work through sequ
 
 ### 9.2 Phase 2: Web UI (v0.2.0)
 
-Single-user web UI with the same views as the TUI. Shipped in v0.2.0. The stack is a Vite + React 19 + TypeScript SPA under `packages/kanbaroo-web/frontend/`. `kanbaroo-api` serves the built bundle at `/ui` via `StaticFiles` plus a path-traversal-safe catch-all that falls back to `index.html` for unknown paths; auth is token paste plus `localStorage`, same-origin only. Live updates reuse the existing WebSocket events stream (`/api/v1/events`) and invalidate the relevant react-query keys on story, comment, tag, and workspace events.
+Single-user web UI with the same views as the TUI (the global audit feed and epic detail are still TUI-only; see the deferred list below). Shipped in v0.2.0. The stack is a Vite + React 19 + TypeScript SPA under `packages/kanbaroo-web/frontend/`. `kanbaroo-api` serves the built bundle at `/ui` via `StaticFiles` plus a path-traversal-safe catch-all that falls back to `index.html` for unknown paths; auth is token paste plus `localStorage`, same-origin only. Live updates reuse the existing WebSocket events stream (`/api/v1/events`) and invalidate the relevant react-query keys on story, comment, tag, epic, and workspace events. List queries (stories, epics) walk `next_cursor` until exhausted so the board and derived counts never truncate at a single page.
 
 Milestone scope:
 
@@ -712,12 +712,13 @@ Milestone scope:
 - M4: drag-to-transition on the board, WebSocket-driven invalidation, optimistic state moves.
 - M5: story detail (description, metadata, comments, tags, audit), edit form with If-Match, conflict modal.
 - M6: story creation modal, keyboard shortcuts (`n`, `/`, `e`, `?`, `Escape`), in-board search, accessibility pass (focus-visible ring, column aria-label with counts, draggable card aria-roledescription, modal focus traps).
+- M7 (post-0.2.0): read-only Epics page at `/workspaces/:workspaceId/epics` with the same columns as the TUI epic list (key, title, state, stories, open, last updated). Counts are grouped client-side from one workspace-wide story fetch. Reachable from the workspace list, the board header, and the `E` hotkey on the board.
 
 Deferred from phase 2 (possible phase 3+):
 
 - Global audit feed screen.
 - Linkage UI (creating/removing linkages from the web).
-- Epic list and epic detail screens.
+- Epic detail screen (the epic list shipped in M7).
 - Tag chips on board cards (blocked on a bulk tag-fetch endpoint; per-story fetch is too chatty).
 - Cross-workspace search.
 

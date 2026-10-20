@@ -150,6 +150,15 @@ export function useEventStream(workspaceId: string | null | undefined): EventStr
           }
           return;
         }
+        if (event.entity_type === 'epic') {
+          // epic.* payloads are the full entity, so workspace_id is
+          // always present for scope filtering.
+          const payload = event.payload as { workspace_id?: unknown };
+          if (typeof payload.workspace_id === 'string' && payload.workspace_id === workspaceId) {
+            queryClient.invalidateQueries({ queryKey: ['epics', workspaceId] });
+          }
+          return;
+        }
         if (event.entity_type === 'workspace' && event.entity_id === workspaceId) {
           queryClient.invalidateQueries({ queryKey: ['workspaces'] });
           queryClient.invalidateQueries({ queryKey: ['workspace', workspaceId] });

@@ -6,21 +6,25 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { apiFetch } from '../api/client';
-import { apiRequest, makeApiError, requestJson, type ApiError } from './http';
-import type { Paginated, Story, StoryPriority, StoryState } from '../types/api';
+import {
+  apiRequest,
+  makeApiError,
+  requestAllPages,
+  requestJson,
+  type ApiError,
+} from './http';
+import type { Story, StoryPriority, StoryState } from '../types/api';
 
 export function useStoriesByWorkspace(
   workspaceId: string | null | undefined,
 ): UseQueryResult<Story[], Error> {
   return useQuery<Story[], Error>({
     queryKey: ['stories', workspaceId],
-    queryFn: async () => {
-      const path = `/api/v1/workspaces/${encodeURIComponent(
-        workspaceId as string,
-      )}/stories?limit=200&include_deleted=false`;
-      const envelope = await requestJson<Paginated<Story>>(path);
-      return envelope.items;
-    },
+    queryFn: () =>
+      requestAllPages<Story>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId as string)}/stories`,
+        { include_deleted: 'false' },
+      ),
     enabled: Boolean(workspaceId),
   });
 }
