@@ -457,6 +457,21 @@ export default function Board(): JSX.Element {
     revealSearch();
   });
 
+  const openEpics = useCallback(() => {
+    if (!workspaceId) {
+      return;
+    }
+    navigate(`/workspaces/${encodeURIComponent(workspaceId)}/epics`);
+  }, [navigate, workspaceId]);
+
+  useHotkey('E', (event) => {
+    if (createOpen) {
+      return;
+    }
+    event.preventDefault();
+    openEpics();
+  });
+
   useHotkey(
     'Escape',
     () => {
@@ -519,6 +534,9 @@ export default function Board(): JSX.Element {
               Search
             </button>
           )}
+          <button type="button" className="secondary" onClick={openEpics}>
+            Epics
+          </button>
           <button type="button" onClick={openCreate}>
             + New story
           </button>

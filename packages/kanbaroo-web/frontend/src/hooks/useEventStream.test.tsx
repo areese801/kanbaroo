@@ -121,6 +121,42 @@ describe('useEventStream', () => {
     });
   });
 
+  it('invalidates the epics query on an epic.* event for the target workspace only', async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    renderHook(() => useEventStream('ws-1'), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => socket.open());
+
+    const epicEvent = (workspaceId: string) =>
+      JSON.stringify({
+        event_id: 'evt-epic',
+        event_type: 'epic.updated',
+        occurred_at: '2026-04-22T00:00:00Z',
+        actor_type: 'human',
+        actor_id: 'tok-1',
+        entity_type: 'epic',
+        entity_id: 'ep-1',
+        entity_version: 2,
+        payload: { id: 'ep-1', workspace_id: workspaceId, title: 'Renamed', state: 'open' },
+      });
+
+    act(() => {
+      socket.receive(epicEvent('ws-other'));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['epics', 'ws-1'] });
+
+    act(() => {
+      socket.receive(epicEvent('ws-1'));
+    });
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['epics', 'ws-1'] });
+    });
+  });
+
   it('ignores ping keepalive frames without invalidating any queries', async () => {
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');

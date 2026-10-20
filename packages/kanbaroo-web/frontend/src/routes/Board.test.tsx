@@ -130,6 +130,7 @@ function renderBoard() {
   return renderWithProviders(
     <Routes>
       <Route path="/workspaces/:workspaceId/board" element={<Board />} />
+      <Route path="/workspaces/:workspaceId/epics" element={<div>epics route</div>} />
     </Routes>,
     { initialEntries: ['/workspaces/ws-1/board'] },
   );
@@ -427,6 +428,61 @@ describe('Board', () => {
     });
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('heading', { name: /new story/i })).toBeInTheDocument();
+  });
+
+  it('the Epics header button navigates to the epic list', async () => {
+    globalThis.fetch = fetchRouter({
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: [], next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    await screen.findByText('Kanbaroo', { exact: false });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Epics' }));
+    expect(await screen.findByText('epics route')).toBeInTheDocument();
+  });
+
+  it('pressing "E" navigates to the epic list', async () => {
+    globalThis.fetch = fetchRouter({
+      '/api/v1/workspaces/ws-1/stories': () =>
+        new Response(JSON.stringify({ items: [], next_cursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1/tags': () =>
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      '/api/v1/workspaces/ws-1': () =>
+        new Response(JSON.stringify(WORKSPACE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    }) as unknown as typeof fetch;
+
+    renderBoard();
+    await screen.findByText('Kanbaroo', { exact: false });
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'E' }));
+    });
+    expect(await screen.findByText('epics route')).toBeInTheDocument();
   });
 
   it('pressing "/" focuses the search input; typing filters visible cards', async () => {

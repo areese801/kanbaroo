@@ -9,7 +9,7 @@ A kanban-style issue tracker with a TUI, REST + WebSocket API, CLI, and MCP serv
 Kanbaroo exposes the same data through five surfaces:
 
 - **TUI** (Textual) for terminal-centric humans: workspace list, kanban board, story detail, fuzzy search, audit feed.
-- **Web UI** (React SPA, served by the API at `/ui`): workspace list, kanban board with drag-to-transition, story detail, comments, tags, live WebSocket updates, keyboard shortcuts.
+- **Web UI** (React SPA, served by the API at `/ui`): workspace list, kanban board with drag-to-transition, epic list with open-story counts, story detail, comments, tags, live WebSocket updates, keyboard shortcuts.
 - **CLI** (Typer + Rich): scriptable access to every resource, JSON output for pipelines.
 - **REST + WebSocket API** (FastAPI): the source of truth. WebSocket feeds live change events; REST is always authoritative.
 - **MCP server**: lets AI agents (outer Claude in particular) read and write the board through the Model Context Protocol.
@@ -161,7 +161,11 @@ Shipped in v0.2.0:
 - Live updates via the existing `/api/v1/events` WebSocket.
 - Story creation modal (`n` on the board).
 - In-board search (`/` on the board; matches on human id prefix and title substring).
-- Keyboard shortcuts: `n` new story, `/` search, `e` edit story, `?` shortcut help, `Escape` close modal / clear search / exit edit mode.
+- Keyboard shortcuts: `n` new story, `/` search, `E` epic list, `e` edit story, `?` shortcut help, `Escape` close modal / clear search / exit edit mode.
+
+Added after v0.2.0:
+
+- Epics page (`/ui/workspaces/<id>/epics`, or `E` on the board): key, title, state, story count, open count, last updated. Open means any state other than Done.
 
 The release wheel auto-includes the built bundle, so `pipx install --include-deps 'kanbaroo[all]'` picks up the UI. Node 20+ is only required at build time for maintainers publishing a new release.
 

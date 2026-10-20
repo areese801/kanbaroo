@@ -4,9 +4,11 @@ Epic list screen (spec section 8.1, "Epic list & detail").
 Reached from the workspace list via ``E`` (capital, so it does not
 clash with the ``e`` keybinding reserved by other screens for the
 editor). Renders the workspace's epics as a :class:`DataTable` with
-columns: human_id, title, state, story_count, updated_at. Story
-counts walk the ``?epic_id=`` filter on the story list endpoint with
-a bounded limit so the render budget stays small.
+columns: human_id, title, state, story_count, open_count, updated_at.
+Story counts walk the ``?epic_id=`` filter on the story list endpoint
+with a bounded limit so the render budget stays small. The open count
+is derived from the same fetched items (every story whose state is
+not ``done``), so it costs no extra requests.
 
 Pressing ``enter`` on a row posts :class:`EpicSelected`; the app
 pushes the matching :class:`EpicDetailScreen`. The TUI follows cage
@@ -33,6 +35,7 @@ from kanbaroo_tui.widgets.help_modal import KeybindingHelp
 EPIC_EVENT_PREFIX = "epic."
 STORY_EVENT_PREFIX = "story."
 STORY_COUNT_LIMIT = 200
+DONE_STATE = "done"
 
 HELP_ROWS: list[tuple[str, str]] = [
     ("j / k", "move cursor"),
@@ -79,7 +82,7 @@ class EpicListScreen(Screen[None]):
         super().__init__()
         self._workspace = workspace
         self._epics: list[dict[str, Any]] = []
-        self._story_counts: dict[str, str] = {}
+        self._story_counts: dict[str, tuple[str, str]] = {}
 
     @property
     def workspace(self) -> dict[str, Any]:
@@ -125,7 +128,7 @@ class EpicListScreen(Screen[None]):
         table: DataTable[str] = DataTable(
             id="epic-table", cursor_type="row", zebra_stripes=True
         )
-        table.add_columns("key", "title", "state", "stories", "last updated")
+        table.add_columns("key", "title", "state", "stories", "open", "last updated")
         await body.mount(table)
         self.app.register_ws_listener(self)  # type: ignore[attr-defined]
         record = getattr(self.app, "record_workspace_context", None)
@@ -188,15 +191,18 @@ class EpicListScreen(Screen[None]):
         client: Any,
         workspace_id: str,
         epics: list[dict[str, Any]],
-    ) -> dict[str, str]:
+    ) -> dict[str, tuple[str, str]]:
         """
-        Return a map of epic-id to display string for the story count.
+        Return a map of epic-id to ``(total, open)`` display strings.
 
         Uses the ``?epic_id=`` filter with a bounded limit: callers that
         need the full story listing go through the board or a dedicated
-        CLI command. ``200+`` marks an epic that outgrew the limit.
+        CLI command. ``200+`` marks an epic that outgrew the limit; the
+        open count carries the same ``+`` suffix in that case because
+        it is a lower bound computed from the fetched page only. "Open"
+        means any state other than ``done``.
         """
-        counts: dict[str, str] = {}
+        counts: dict[str, tuple[str, str]] = {}
         for epic in epics:
             epic_id = str(epic.get("id", ""))
             response = await client.get(
@@ -205,10 +211,11 @@ class EpicListScreen(Screen[None]):
             )
             body = response.json()
             items = body.get("items", [])
-            if body.get("next_cursor") is not None:
-                counts[epic_id] = f"{len(items)}+"
-            else:
-                counts[epic_id] = str(len(items))
+            open_total = sum(
+                1 for item in items if str(item.get("state", "")) != DONE_STATE
+            )
+            suffix = "+" if body.get("next_cursor") is not None else ""
+            counts[epic_id] = (f"{len(items)}{suffix}", f"{open_total}{suffix}")
         return counts
 
     def _render_table(self) -> None:
@@ -228,11 +235,13 @@ class EpicListScreen(Screen[None]):
         table.clear()
         for epic in self._epics:
             epic_id = str(epic.get("id", ""))
+            total, open_count = self._story_counts.get(epic_id, ("?", "?"))
             table.add_row(
                 str(epic.get("human_id", "")),
                 str(epic.get("title", "")),
                 str(epic.get("state", "")),
-                self._story_counts.get(epic_id, "?"),
+                total,
+                open_count,
                 str(epic.get("updated_at", "")),
                 key=epic_id,
             )

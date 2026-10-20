@@ -1119,3 +1119,115 @@ select:focus-visible,
   font-size: 0.85rem;
   color: #e6e6e6;
 }
+
+/* --- Epic list --- */
+
+.epic-list-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.button-link {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #2a2f3d;
+  background: #1a1d27;
+  color: #e6e6e6;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.button-link:hover {
+  border-color: #7faa3a;
+}
+
+.workspace-row-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.workspace-row-wrap .workspace-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-row-epics {
+  white-space: nowrap;
+}
+
+.epic-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5rem;
+  background: #15181f;
+  border: 1px solid #252836;
+  border-radius: 6px;
+}
+
+.epic-table th,
+.epic-table td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid #252836;
+  font-size: 0.9rem;
+  vertical-align: top;
+}
+
+.epic-table th {
+  color: #8a8f9c;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.epic-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.epic-table tbody tr:hover td {
+  background: #1a1d27;
+}
+
+.epic-table-key,
+.epic-table-updated {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #8a8f9c;
+  white-space: nowrap;
+}
+
+.epic-table-title {
+  color: #e6e6e6;
+  font-weight: 600;
+}
+
+.epic-table-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.epic-table th:nth-child(4),
+.epic-table th:nth-child(5) {
+  text-align: right;
+}
+
+.epic-state {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid #2a2f3d;
+  color: #8a8f9c;
+}
+
+.epic-state-open {
+  color: #7faa3a;
+  border-color: rgba(127, 170, 58, 0.45);
+}

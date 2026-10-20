@@ -36,6 +36,7 @@ function StoryCrumb({ storyId }: { storyId: string }): JSX.Element {
 
 function Breadcrumbs(): JSX.Element | null {
   const boardMatch = useMatch('/workspaces/:workspaceId/board');
+  const epicsMatch = useMatch('/workspaces/:workspaceId/epics');
   const storyMatch = useMatch('/stories/:storyId');
 
   if (storyMatch?.params.storyId) {
@@ -43,6 +44,17 @@ function Breadcrumbs(): JSX.Element | null {
   }
   if (boardMatch?.params.workspaceId) {
     return <WorkspaceCrumb workspaceId={boardMatch.params.workspaceId} />;
+  }
+  if (epicsMatch?.params.workspaceId) {
+    return (
+      <>
+        <WorkspaceCrumb workspaceId={epicsMatch.params.workspaceId} />
+        <span className="breadcrumb">
+          <span className="breadcrumb-sep">/</span>
+          <span className="breadcrumb-item">Epics</span>
+        </span>
+      </>
+    );
   }
   return null;
 }

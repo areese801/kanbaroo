@@ -7,6 +7,7 @@ import {
   useAddStoryTags,
   useCreateStory,
   useRemoveStoryTag,
+  useStoriesByWorkspace,
   useStory,
   useTransitionStory,
   useUpdateStory,
@@ -369,5 +370,88 @@ describe('useAddStoryTags / useRemoveStoryTag', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['story-tags', 'st-tag'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['story', 'st-tag'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['audit', 'story', 'st-tag'] });
+  });
+});
+
+describe('useStoriesByWorkspace', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    useAuthStore.getState().setToken('kbr_test_token');
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    useAuthStore.getState().clearToken();
+    vi.restoreAllMocks();
+  });
+
+  it('walks next_cursor until exhausted and concatenates every page in order', async () => {
+    const pageOne = [makeStory({ id: 'st-1', human_id: 'KAN-1' }), makeStory({ id: 'st-2', human_id: 'KAN-2' })];
+    const pageTwo = [makeStory({ id: 'st-3', human_id: 'KAN-3' })];
+    const pageThree = [makeStory({ id: 'st-4', human_id: 'KAN-4' })];
+    const requestedUrls: string[] = [];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      requestedUrls.push(url);
+      const search = new URL(url, 'http://localhost').searchParams;
+      const cursor = search.get('cursor');
+      let body: { items: Story[]; next_cursor: string | null };
+      if (cursor === null) {
+        body = { items: pageOne, next_cursor: 'cursor-two' };
+      } else if (cursor === 'cursor-two') {
+        body = { items: pageTwo, next_cursor: 'cursor-three' };
+      } else {
+        body = { items: pageThree, next_cursor: null };
+      }
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = makeClient();
+    const { result } = renderHook(() => useStoriesByWorkspace('ws-1'), {
+      wrapper: makeWrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.map((story) => story.id)).toEqual([
+      'st-1',
+      'st-2',
+      'st-3',
+      'st-4',
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(requestedUrls[0]).toBe(
+      '/api/v1/workspaces/ws-1/stories?limit=200&include_deleted=false',
+    );
+    expect(requestedUrls[1]).toBe(
+      '/api/v1/workspaces/ws-1/stories?limit=200&include_deleted=false&cursor=cursor-two',
+    );
+    expect(requestedUrls[2]).toBe(
+      '/api/v1/workspaces/ws-1/stories?limit=200&include_deleted=false&cursor=cursor-three',
+    );
+  });
+
+  it('issues a single request when the first page has no next_cursor', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ items: [makeStory({ id: 'st-1' })], next_cursor: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = makeClient();
+    const { result } = renderHook(() => useStoriesByWorkspace('ws-1'), {
+      wrapper: makeWrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,6 +4,7 @@ import { setUnauthorizedHandler } from './api/client';
 import { useAuthStore } from './state/auth';
 import AppHeader from './components/AppHeader';
 import Board from './routes/Board';
+import EpicList from './routes/EpicList';
 import Login from './routes/Login';
 import StoryDetail from './routes/StoryDetail';
 import WorkspaceList from './routes/WorkspaceList';
@@ -43,6 +44,7 @@ export default function App(): JSX.Element {
       >
         <Route path="/workspaces" element={<WorkspaceList />} />
         <Route path="/workspaces/:workspaceId/board" element={<Board />} />
+        <Route path="/workspaces/:workspaceId/epics" element={<EpicList />} />
         <Route path="/stories/:storyId" element={<StoryDetail />} />
       </Route>
       <Route path="/" element={<Navigate to="/workspaces" replace />} />

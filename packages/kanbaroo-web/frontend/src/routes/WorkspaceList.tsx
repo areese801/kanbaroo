@@ -46,7 +46,7 @@ export default function WorkspaceList(): JSX.Element {
     <section className="page">
       <header className="page-header">
         <h1>Workspaces</h1>
-        <p className="muted">Pick a workspace to open its board, or create a new one.</p>
+        <p className="muted">Pick a workspace to open its board or epics, or create a new one.</p>
       </header>
 
       <div className="workspace-list">
@@ -73,7 +73,7 @@ export default function WorkspaceList(): JSX.Element {
         {workspacesQuery.isSuccess && workspacesQuery.data.items.length > 0 ? (
           <ul className="workspace-rows">
             {workspacesQuery.data.items.map((workspace) => (
-              <li key={workspace.id}>
+              <li key={workspace.id} className="workspace-row-wrap">
                 <button
                   type="button"
                   className="workspace-row"
@@ -84,6 +84,14 @@ export default function WorkspaceList(): JSX.Element {
                   {workspace.description ? (
                     <span className="workspace-row-description">{workspace.description}</span>
                   ) : null}
+                </button>
+                <button
+                  type="button"
+                  className="secondary workspace-row-epics"
+                  aria-label={`Epics for ${workspace.name}`}
+                  onClick={() => navigate(`/workspaces/${workspace.id}/epics`)}
+                >
+                  Epics
                 </button>
               </li>
             ))}
