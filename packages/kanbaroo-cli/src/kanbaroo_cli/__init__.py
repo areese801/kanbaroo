@@ -2,4 +2,4 @@
 Kanbaroo CLI: Typer-based command-line interface (kanbaroo, kb).
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

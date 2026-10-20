@@ -4,6 +4,8 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-20
+
 ### Added
 
 - README "Upgrading" section: how to upgrade the pipx-installed
