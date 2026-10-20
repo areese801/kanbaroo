@@ -6,6 +6,11 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ### Added
 
+- README "Upgrading" section: how to upgrade the pipx-installed
+  clients and the Docker server separately, back up the database,
+  rebuild the image (`kb server start` does not rebuild), and apply
+  migrations (the API does not migrate on startup). This release needs
+  no migration.
 - TUI epic list now shows a dedicated `open` column (stories in any
   state other than `done`) directly after `stories`. The open count is
   derived from the same per-epic story fetch, so it adds no requests.

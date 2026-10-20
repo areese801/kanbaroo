@@ -295,6 +295,22 @@ pipx install --include-deps 'kanbaroo[all]'
 
 `--include-deps` is load-bearing: without it, pipx only exposes the meta-package's apps (none), so `kb`, `kanbaroo-mcp`, `kanbaroo-tui`, `kanbaroo-api`, and `kanbaroo` all stay hidden in the isolated venv.
 
+## Upgrade Path for Existing Users
+
+The user-facing upgrade procedure lives in the README's "Upgrading" section. Keep it accurate; these are the facts it depends on:
+
+- **Clients and server upgrade separately.** pipx/pip upgrades `kb`, `kanbaroo-tui`, and `kanbaroo-mcp`. The server container is built from the source in the user's checkout (`build: .` in `docker-compose.yml`), so a pipx upgrade never changes the running server or its web UI.
+- **`kb server start` does not rebuild.** It runs `docker compose up -d` without `--build`, so after `git pull` / `git checkout v<version>` the user needs `docker compose up -d --build`. If you change `kb server start` to rebuild, update the README.
+- **The API never migrates on startup.** Migrations are a manual `alembic ... upgrade head` inside the container. `kb init` also migrates, but it mints a token and refuses to run over an existing config, so it is not an upgrade tool.
+- **The web UI ships with the server**, never ahead of or behind it. The TUI, CLI, and MCP can be on a different version from the server.
+
+When you make a change, think about what an existing user has to do to receive it, and say so in the CHANGELOG entry:
+
+- **Client-only or web-only change** (no new endpoint, no schema change): no extra steps. Most features land here.
+- **New or changed endpoint used by a client**: the client needs a server at least as new. Note "requires server vX.Y or later" in the CHANGELOG.
+- **New Alembic migration**: add an explicit "Upgrade note: this release adds a database migration; run `alembic upgrade head` inside the container" line to the CHANGELOG entry, keep the migration backwards compatible within the minor version (see Versioning), and confirm the README's migration step still applies.
+- **Change to the container layout** (`Dockerfile`, `docker-compose.yml`, data paths, env vars): update the README "Upgrading" steps and `docs/deployment-dogfood.md` in the same PR.
+
 ## Versioning
 
 This project follows [Semantic Versioning](https://semver.org/).
@@ -331,7 +347,8 @@ Kanbaroo has multiple interlocking documents. When you change one, check whether
 2. Did I change a code convention, build step, or architectural pattern? → Update this `CLAUDE.md`.
 3. Did I change an MCP tool name, signature, or intended workflow? → Update the workflow skill draft.
 4. Did I add or remove user-facing functionality? → Update `README.md` and `CHANGELOG.md`.
-5. Did I resolve an open question from spec section 10? → Remove it from the open questions list and fold the resolution into the main text.
+5. Does an existing user need to do anything beyond reinstalling to get this change (migration, server rebuild, newer server)? → Say so in `CHANGELOG.md`, and update the README "Upgrading" section if the procedure itself changed. See "Upgrade Path for Existing Users" above.
+6. Did I resolve an open question from spec section 10? → Remove it from the open questions list and fold the resolution into the main text.
 
 If you notice existing docs are already out of sync (from prior work or spec drift), flag it to the user. Don't silently fix or silently ignore. Drift is a signal worth surfacing.
 
