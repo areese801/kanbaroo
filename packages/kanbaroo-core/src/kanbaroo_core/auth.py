@@ -14,14 +14,18 @@ Conventions (see ``docs/spec.md`` sections 3.3 and 4.1):
 - The database only ever stores the SHA-256 hex digest in
   ``api_tokens.token_hash``. The plaintext is shown to the caller
   exactly once, at creation time, and is never recoverable afterwards.
-- Validation updates ``last_used_at`` on success so that idle tokens
-  are identifiable.
+- Validation refreshes ``last_used_at`` on success so that idle tokens
+  are identifiable. The stamp is throttled to once per
+  :data:`LAST_USED_AT_REFRESH_SECONDS` so a burst of authenticated
+  reads does not turn every GET into a write transaction (SQLite
+  serializes writers, which was measurably slowing concurrent reads).
 - Revocation is idempotent: revoking an already-revoked token is a
   no-op.
 """
 
 import hashlib
 import secrets
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,9 +33,14 @@ from sqlalchemy.orm import Session
 from kanbaroo_core.actor import Actor
 from kanbaroo_core.enums import ActorType
 from kanbaroo_core.models.api_token import ApiToken
-from kanbaroo_core.time import utc_now_iso
+from kanbaroo_core.time import format_utc_iso, parse_utc_iso, utc_now_iso
 
 TOKEN_PREFIX = "kbr_"
+
+# Minimum age of ``last_used_at`` before a successful validation
+# rewrites it. Coarse on purpose: the column answers "is this token
+# idle?", which does not need sub-minute precision.
+LAST_USED_AT_REFRESH_SECONDS = 60
 
 
 def hash_token(plaintext: str) -> str:
@@ -86,15 +95,39 @@ def create_token(
     return token, plaintext
 
 
-def validate_token(session: Session, plaintext: str) -> Actor | None:
+def _should_refresh_last_used(previous: str | None, now: datetime) -> bool:
+    """
+    Return ``True`` when ``last_used_at`` is missing, unparseable, or
+    older than :data:`LAST_USED_AT_REFRESH_SECONDS` relative to ``now``.
+
+    An unparseable stored value counts as stale so a hand-edited or
+    corrupted row heals itself on the next successful validation.
+    """
+    parsed = parse_utc_iso(previous)
+    if parsed is None:
+        return True
+    return now - parsed >= timedelta(seconds=LAST_USED_AT_REFRESH_SECONDS)
+
+
+def validate_token(
+    session: Session,
+    plaintext: str,
+    *,
+    now: datetime | None = None,
+) -> Actor | None:
     """
     Resolve a plaintext token to its :class:`Actor`, or ``None``.
 
     Hashes the candidate, looks up the matching row, and returns the
     attributed actor. Returns ``None`` if the hash is unknown or the
-    token has been revoked. On success, stamps ``last_used_at`` with
-    the current UTC timestamp; callers commit the surrounding
-    transaction.
+    token has been revoked.
+
+    On success, refreshes ``last_used_at`` only when it is ``NULL`` or
+    at least :data:`LAST_USED_AT_REFRESH_SECONDS` old, so the common
+    case (a client issuing many requests in quick succession) is a
+    pure read and leaves the session clean. Callers commit the
+    surrounding transaction when a refresh did happen. ``now`` exists
+    so tests can freeze time; production callers leave it ``None``.
     """
     digest = hash_token(plaintext)
     row = session.execute(
@@ -102,7 +135,9 @@ def validate_token(session: Session, plaintext: str) -> Actor | None:
     ).scalar_one_or_none()
     if row is None or row.revoked_at is not None:
         return None
-    row.last_used_at = utc_now_iso()
+    current = now if now is not None else datetime.now(UTC)
+    if _should_refresh_last_used(row.last_used_at, current):
+        row.last_used_at = format_utc_iso(current)
     return Actor(type=row.actor_type, id=row.actor_id)
 
 

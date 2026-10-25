@@ -331,3 +331,208 @@ def test_soft_delete_does_not_cascade_to_replies(session: Session) -> None:
     assert [c.id for c in live] == [reply.id]
     reread = comment_service.get_comment(session, comment_id=reply.id)
     assert reread.parent_id == parent.id
+
+
+def _setup_workspace_with_stories(
+    session: Session, key: str, count: int
+) -> tuple[str, list[str]]:
+    """
+    Create a workspace with ``count`` stories; return ``(workspace_id,
+    story_ids)``.
+    """
+    ws = ws_service.create_workspace(
+        session,
+        actor=HUMAN,
+        payload=WorkspaceCreate(key=key, name=key),
+    )
+    session.commit()
+    story_ids: list[str] = []
+    for n in range(count):
+        story = story_service.create_story(
+            session,
+            actor=HUMAN,
+            workspace_id=ws.id,
+            payload=StoryCreate(title=f"{key} story {n}"),
+        )
+        story_ids.append(story.id)
+    session.commit()
+    return ws.id, story_ids
+
+
+def _comment(session: Session, story_id: str, body: str) -> str:
+    """
+    Create a comment on ``story_id`` and return its id.
+    """
+    comment = comment_service.create_comment(
+        session,
+        actor=HUMAN,
+        story_id=story_id,
+        payload=CommentCreate(body=body),
+    )
+    session.commit()
+    return comment.id
+
+
+def test_list_workspace_comments_returns_live_comments_across_stories(
+    session: Session,
+) -> None:
+    """
+    Every live comment on every live story in the workspace comes back,
+    ordered by comment id, and each row carries its ``story_id`` so
+    clients can group.
+    """
+    ws_id, (s1, s2) = _setup_workspace_with_stories(session, "KAN", 2)
+    c1 = _comment(session, s1, "first")
+    c2 = _comment(session, s2, "second")
+    c3 = _comment(session, s1, "third")
+
+    rows, next_cursor = comment_service.list_workspace_comments(
+        session, workspace_id=ws_id
+    )
+
+    assert [row.id for row in rows] == sorted([c1, c2, c3])
+    assert {row.story_id for row in rows} == {s1, s2}
+    assert next_cursor is None
+
+
+def test_list_workspace_comments_scoped_to_workspace(session: Session) -> None:
+    """
+    Comments on stories in a different workspace never appear.
+    """
+    ws_a, (story_a,) = _setup_workspace_with_stories(session, "AAA", 1)
+    ws_b, (story_b,) = _setup_workspace_with_stories(session, "BBB", 1)
+    _comment(session, story_a, "in a")
+    other = _comment(session, story_b, "in b")
+
+    rows, _ = comment_service.list_workspace_comments(session, workspace_id=ws_a)
+
+    assert [row.body for row in rows] == ["in a"]
+    assert other not in {row.id for row in rows}
+
+
+def test_list_workspace_comments_excludes_soft_deleted_comments(
+    session: Session,
+) -> None:
+    """
+    A soft-deleted comment is excluded even though its story is live.
+    """
+    ws_id, (story_id,) = _setup_workspace_with_stories(session, "KAN", 1)
+    keep = _comment(session, story_id, "keep")
+    gone = _comment(session, story_id, "gone")
+    comment_service.soft_delete_comment(
+        session, actor=HUMAN, comment_id=gone, expected_version=1
+    )
+    session.commit()
+
+    rows, _ = comment_service.list_workspace_comments(session, workspace_id=ws_id)
+
+    assert [row.id for row in rows] == [keep]
+
+
+def test_list_workspace_comments_excludes_comments_on_deleted_stories(
+    session: Session,
+) -> None:
+    """
+    A live comment on a soft-deleted story is excluded: archived stories
+    must not leak back into search through their comment thread.
+    """
+    ws_id, (live_story, dead_story) = _setup_workspace_with_stories(session, "KAN", 2)
+    keep = _comment(session, live_story, "keep")
+    _comment(session, dead_story, "orphaned")
+    story_service.soft_delete_story(
+        session, actor=HUMAN, story_id=dead_story, expected_version=1
+    )
+    session.commit()
+
+    rows, _ = comment_service.list_workspace_comments(session, workspace_id=ws_id)
+
+    assert [row.id for row in rows] == [keep]
+
+
+def test_list_workspace_comments_paginates_with_cursor(session: Session) -> None:
+    """
+    ``limit`` bounds each page; walking ``next_cursor`` yields every row
+    exactly once in id order and the final page reports no cursor.
+    """
+    ws_id, (story_id,) = _setup_workspace_with_stories(session, "KAN", 1)
+    created = [_comment(session, story_id, f"c{n}") for n in range(5)]
+
+    seen: list[str] = []
+    cursor: str | None = None
+    pages = 0
+    while True:
+        rows, cursor = comment_service.list_workspace_comments(
+            session, workspace_id=ws_id, cursor=cursor, limit=2
+        )
+        pages += 1
+        assert len(rows) <= 2
+        seen.extend(row.id for row in rows)
+        if cursor is None:
+            break
+
+    assert pages == 3
+    assert seen == sorted(created)
+
+
+def test_list_workspace_comments_clamps_limit(session: Session) -> None:
+    """
+    Out-of-range limits are clamped to the shared page bounds rather
+    than rejected.
+    """
+    ws_id, (story_id,) = _setup_workspace_with_stories(session, "KAN", 1)
+    for n in range(3):
+        _comment(session, story_id, f"c{n}")
+
+    rows, cursor = comment_service.list_workspace_comments(
+        session, workspace_id=ws_id, limit=0
+    )
+    assert len(rows) == 1
+    assert cursor is not None
+
+    rows, cursor = comment_service.list_workspace_comments(
+        session, workspace_id=ws_id, limit=comment_service.MAX_PAGE_LIMIT + 1
+    )
+    assert len(rows) == 3
+    assert cursor is None
+
+
+def test_list_workspace_comments_malformed_cursor_rejected(
+    session: Session,
+) -> None:
+    """
+    A cursor that is not valid base64 raises :class:`ValidationError`.
+    """
+    ws_id, _ = _setup_workspace_with_stories(session, "KAN", 1)
+    with pytest.raises(ValidationError):
+        comment_service.list_workspace_comments(
+            session, workspace_id=ws_id, cursor="not base64!"
+        )
+
+
+def test_list_workspace_comments_unknown_workspace_raises(session: Session) -> None:
+    """
+    An unknown workspace id raises :class:`NotFoundError` so the API can
+    answer 404 instead of an empty page.
+    """
+    with pytest.raises(NotFoundError) as excinfo:
+        comment_service.list_workspace_comments(session, workspace_id="missing")
+    assert excinfo.value.entity_type == "workspace"
+
+
+def test_list_workspace_comments_deleted_workspace_raises(session: Session) -> None:
+    """
+    A soft-deleted workspace is treated as missing.
+    """
+    ws_id, (story_id,) = _setup_workspace_with_stories(session, "KAN", 1)
+    _comment(session, story_id, "x")
+    workspace = ws_service.get_workspace(session, workspace_id=ws_id)
+    ws_service.soft_delete_workspace(
+        session,
+        actor=HUMAN,
+        workspace_id=ws_id,
+        expected_version=workspace.version,
+    )
+    session.commit()
+
+    with pytest.raises(NotFoundError):
+        comment_service.list_workspace_comments(session, workspace_id=ws_id)

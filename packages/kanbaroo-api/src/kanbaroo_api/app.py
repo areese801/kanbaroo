@@ -73,6 +73,7 @@ def create_app(*, database_url: str | None = None) -> FastAPI:
     app.include_router(epics_router.router, prefix=API_PREFIX)
     app.include_router(stories_router.workspace_router, prefix=API_PREFIX)
     app.include_router(stories_router.router, prefix=API_PREFIX)
+    app.include_router(comments_router.workspace_router, prefix=API_PREFIX)
     app.include_router(comments_router.story_router, prefix=API_PREFIX)
     app.include_router(comments_router.router, prefix=API_PREFIX)
     app.include_router(tags_router.workspace_router, prefix=API_PREFIX)

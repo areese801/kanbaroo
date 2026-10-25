@@ -8,6 +8,12 @@ thin: every screen fetches its own data and owns its own bindings;
 the app's job is to wire them together, route WebSocket events to
 the active screen, and shut everything down cleanly on exit.
 
+The one piece of shared state the app does own is the global search
+index (:class:`~kanbaroo_tui.search_index.SearchIndex`). It outlives
+any single :class:`SearchScreen` so reopening ``/`` is free, and the
+app, not the screen, watches ``story.*`` / ``comment.*`` WebSocket
+events to mark it stale and schedule a debounced background rebuild.
+
 Dependency injection
 --------------------
 
@@ -27,6 +33,7 @@ from typing import Any, ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
+from textual.timer import Timer
 from textual.widgets import Static
 
 from kanbaroo_tui.client import AsyncApiClient
@@ -53,10 +60,17 @@ from kanbaroo_tui.screens.epic_list import EpicListScreen
 from kanbaroo_tui.screens.search import SearchScreen
 from kanbaroo_tui.screens.story_detail import StoryDetailScreen
 from kanbaroo_tui.screens.workspace_list import WorkspaceListScreen
+from kanbaroo_tui.search_index import SearchIndex, is_search_relevant_event
 from kanbaroo_tui.ws import EventSubscriber, build_events_url
 
 ClientFactory = Callable[[TuiConfig], AsyncApiClient]
 WsFactory = Callable[[TuiConfig], AsyncIterator[dict[str, Any]]]
+
+# How long after the last ``story.*`` / ``comment.*`` event the search
+# index waits before rebuilding, so a burst of events (an MCP client
+# creating several stories) costs one rebuild instead of one per event.
+SEARCH_REBUILD_DEBOUNCE_SECONDS = 1.0
+SEARCH_INDEX_WORKER_GROUP = "search-index"
 
 
 def default_client_factory(config: TuiConfig) -> AsyncApiClient:
@@ -106,6 +120,7 @@ class KanbarooTuiApp(App[None]):
         client_factory: ClientFactory | None = None,
         ws_factory: WsFactory | None = None,
         editor_runner: EditorRunner | None = None,
+        search_rebuild_debounce: float = SEARCH_REBUILD_DEBOUNCE_SECONDS,
     ) -> None:
         """
         Build the app bound to ``config``.
@@ -115,6 +130,10 @@ class KanbarooTuiApp(App[None]):
         a callable that rewrites the temp file directly so no real
         editor subprocess is launched; production callers leave it
         ``None`` and each screen falls back to the default runner.
+
+        ``search_rebuild_debounce`` is the quiet period (seconds) after
+        the last search-relevant WebSocket event before the index
+        rebuilds; tests shorten it so they do not have to wait.
         """
         super().__init__()
         self._config = config
@@ -124,6 +143,10 @@ class KanbarooTuiApp(App[None]):
         self._client: AsyncApiClient | None = None
         self._ws_task: asyncio.Task[None] | None = None
         self._ws_listeners: list[Any] = []
+        self._search_index = SearchIndex()
+        self._search_index.on_warning = self._warn_search
+        self._search_rebuild_debounce = search_rebuild_debounce
+        self._search_rebuild_timer: Timer | None = None
         # Last workspace context observed from any workspace-scoped
         # screen. Used as a fallback for app-level global navigation
         # (``E`` especially) when the current top-of-stack screen has
@@ -137,6 +160,14 @@ class KanbarooTuiApp(App[None]):
         any. Screens read this when their own runner is ``None``.
         """
         return self._editor_runner
+
+    @property
+    def search_index(self) -> SearchIndex:
+        """
+        Return the session-wide search index. :class:`SearchScreen`
+        reads from it; only the app mutates it.
+        """
+        return self._search_index
 
     @property
     def client(self) -> AsyncApiClient:
@@ -169,6 +200,9 @@ class KanbarooTuiApp(App[None]):
         """
         Shut down the WS task and close the HTTP client.
         """
+        if self._search_rebuild_timer is not None:
+            self._search_rebuild_timer.stop()
+            self._search_rebuild_timer = None
         if self._ws_task is not None:
             self._ws_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -219,11 +253,59 @@ class KanbarooTuiApp(App[None]):
         class name, so ``WsEventReceived`` maps to
         ``on_ws_event_received``.
         """
+        self._note_search_event(message.event)
         for listener in list(self._ws_listeners):
             handler = getattr(listener, "handle_ws_event", None)
             if handler is None:
                 continue
             await handler(message.event)
+
+    def _note_search_event(self, event: dict[str, Any]) -> None:
+        """
+        Mark the search index stale on ``story.*`` / ``comment.*``
+        events and (re)arm the debounced rebuild.
+
+        A rebuild is only scheduled once the index has been built or is
+        being built: a user who never opens search never pays for
+        fetching it. Each event restarts the timer, so a burst of
+        events ends in a single rebuild roughly
+        ``search_rebuild_debounce`` seconds after the last one.
+        """
+        if not is_search_relevant_event(event):
+            return
+        self._search_index.mark_stale()
+        if not (self._search_index.built or self._search_index.building):
+            return
+        if self._search_rebuild_timer is not None:
+            self._search_rebuild_timer.stop()
+        self._search_rebuild_timer = self.set_timer(
+            self._search_rebuild_debounce, self._on_search_rebuild_timer
+        )
+
+    def _on_search_rebuild_timer(self) -> None:
+        self._search_rebuild_timer = None
+        self.request_search_index_refresh()
+
+    def request_search_index_refresh(self) -> None:
+        """
+        Rebuild the search index in an app-owned background worker.
+
+        The worker belongs to the app rather than the search screen so
+        closing the screen mid-build does not cancel the fetch. The
+        index itself coalesces overlapping requests: if a build is
+        already running this schedules exactly one follow-up instead
+        of a concurrent build.
+        """
+        if self._client is None:
+            return
+        self.run_worker(
+            self._search_index.refresh(self._client),
+            group=SEARCH_INDEX_WORKER_GROUP,
+            exit_on_error=False,
+        )
+
+    def _warn_search(self, message: str) -> None:
+        self.notify(message, severity="warning")
 
     async def on_workspace_selected(self, message: WorkspaceSelected) -> None:
         """

@@ -323,7 +323,7 @@ CREATE TABLE api_tokens (
     actor_id        TEXT NOT NULL,               -- Free-form label, e.g. "adam" or "outer-claude"
     name            TEXT NOT NULL,               -- Human-readable description
     created_at      TEXT NOT NULL,
-    last_used_at    TEXT,
+    last_used_at    TEXT,                        -- Refreshed on auth at most once per 60s (see 4.1)
     revoked_at      TEXT
 );
 ```
@@ -344,7 +344,7 @@ CREATE TABLE api_tokens (
 ### 4.1 Conventions
 
 - **Base URL**: `http://localhost:8080/api/v1` for local. Versioned in the path.
-- **Auth**: `Authorization: Bearer <token>` header required on every request. Token is hashed on the server; plaintext shown only at creation.
+- **Auth**: `Authorization: Bearer <token>` header required on every request. Token is hashed on the server; plaintext shown only at creation. Successful validation refreshes the token's `last_used_at`, throttled to once per 60 seconds so a burst of reads stays read-only on the database; the column answers "is this token idle?" and does not promise sub-minute precision.
 - **Content type**: `application/json` for all requests and responses.
 - **Concurrency**: Every mutable entity response includes an `ETag` header with the current `version`. Mutation requests must include `If-Match: <version>`. Mismatch returns `412 Precondition Failed`.
 - **Errors**: Consistent shape:
@@ -418,10 +418,13 @@ DELETE /stories/{id}/tags/{tag_id}         # Remove tag
 ```
 GET    /stories/{id}/comments              # List (flat + parent_id for threading)
 POST   /stories/{id}/comments              # Create (body, parent_id?)
+GET    /workspaces/{id}/comments           # Bulk list across the workspace (paginated; cursor, limit)
 GET    /comments/{id}                      # Read
 PATCH  /comments/{id}                      # Update body
 DELETE /comments/{id}                      # Soft delete
 ```
+
+`GET /workspaces/{id}/comments` is a read-only bulk feed for clients that index comment text (the TUI's global search). It returns live comments on live stories only, ordered by comment id, in the standard `{ items, next_cursor }` envelope with the same cursor scheme and `limit` bounds (1 to 200, default 50) as the story list. It answers `404 not_found` with `details.entity_type = "workspace"` when the workspace is unknown or soft-deleted; a server that predates the route answers the framework 404 with `details: null`, which is how older servers are detected by clients that fall back to per-story fetches.
 
 #### Linkages
 

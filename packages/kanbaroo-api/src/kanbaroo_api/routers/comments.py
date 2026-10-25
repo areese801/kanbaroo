@@ -3,7 +3,9 @@ Comment REST endpoints.
 
 Matches ``docs/spec.md`` section 4.2 for ``/comments``. List and create
 are scoped to a story path; read, update, and soft-delete are addressed
-by comment id. Every mutating endpoint requires ``If-Match``. All
+by comment id; the paginated bulk list is scoped to a workspace path so
+search clients can index every comment with a handful of requests.
+Every mutating endpoint requires ``If-Match``. All
 business logic lives in :mod:`kanbaroo_core.services.comments`; these
 handlers only marshal HTTP concerns.
 """
@@ -19,6 +21,7 @@ from kanbaroo_core.actor import Actor
 from kanbaroo_core.schemas.comment import CommentCreate, CommentRead, CommentUpdate
 from kanbaroo_core.services import comments as comment_service
 
+workspace_router = APIRouter(prefix="/workspaces", tags=["comments"])
 story_router = APIRouter(prefix="/stories", tags=["comments"])
 router = APIRouter(prefix="/comments", tags=["comments"])
 
@@ -30,6 +33,47 @@ class CommentListResponse(BaseModel):
     """
 
     items: list[CommentRead]
+
+
+class WorkspaceCommentListResponse(BaseModel):
+    """
+    Paginated envelope for the workspace-wide comment list.
+    """
+
+    items: list[CommentRead]
+    next_cursor: str | None
+
+
+@workspace_router.get(
+    "/{workspace_id}/comments",
+    response_model=WorkspaceCommentListResponse,
+)
+def list_workspace_comments(
+    workspace_id: str,
+    cursor: str | None = Query(None),
+    limit: int = Query(
+        comment_service.DEFAULT_PAGE_LIMIT,
+        ge=1,
+        le=comment_service.MAX_PAGE_LIMIT,
+    ),
+    session: Session = Depends(get_session),
+    _actor: Actor = Depends(resolve_actor),
+) -> WorkspaceCommentListResponse:
+    """
+    Return a page of live comments across every live story in
+    ``workspace_id``, ordered by comment id. Responds with ``404`` when
+    the workspace is unknown or soft-deleted.
+    """
+    rows, next_cursor = comment_service.list_workspace_comments(
+        session,
+        workspace_id=workspace_id,
+        cursor=cursor,
+        limit=limit,
+    )
+    return WorkspaceCommentListResponse(
+        items=[CommentRead.model_validate(row) for row in rows],
+        next_cursor=next_cursor,
+    )
 
 
 @story_router.get(
