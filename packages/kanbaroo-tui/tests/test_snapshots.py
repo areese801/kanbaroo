@@ -38,7 +38,7 @@ from typing import Any
 import httpx
 import pytest
 from textual.app import App, ComposeResult
-from textual.widgets import Static
+from textual.widgets import Input, Static
 
 from kanbaroo_tui.app import KanbarooTuiApp
 from kanbaroo_tui.client import AsyncApiClient
@@ -717,20 +717,22 @@ def test_snapshot_search(snap_compare, mock_api, app_factory):
         _story("story-3", "KAN-3", title="Polish the footer"),
     ]
     _seed_workspace_list(mock_api, counts={"ws-1": (stories, [])})
-    # Search index rebuild fires /workspaces again plus the per-story
-    # stories walk and comment fetches.
+    # The search index build fires /workspaces again, the stories walk,
+    # and one bulk comments fetch per workspace.
     mock_api.json("GET", "/workspaces", body=_list_body([_workspace()]))
     mock_api.json("GET", "/workspaces/ws-1/stories", body=_list_body(stories))
-    for story in stories:
-        mock_api.json(
-            "GET",
-            f"/stories/{story['id']}/comments",
-            body=_list_body([]),
-        )
+    mock_api.json("GET", "/workspaces/ws-1/comments", body=_list_body([]))
 
     async def _run(pilot: Any) -> None:
         await pilot.pause()
         await pilot.press("slash")
+        # The input is focused before the index finishes building, so
+        # the cursor's blink phase at capture time depends on how long
+        # the build took. Pin the cursor visible so the frame is stable.
+        pilot.app.screen.query_one("#search-input", Input).cursor_blink = False
+        # The index builds in an app-owned worker; wait for it so the
+        # hint line reads the settled "index: N stories" form.
+        await pilot.app.workers.wait_for_complete()
         await pilot.pause()
         await pilot.pause()
 

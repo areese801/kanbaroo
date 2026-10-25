@@ -18,7 +18,6 @@ As with epics, soft deletes do not cascade and every mutation emits
 exactly one audit row within the caller's transaction.
 """
 
-import base64
 from typing import Any
 
 from sqlalchemy import func, select
@@ -40,12 +39,19 @@ from kanbaroo_core.services.exceptions import (
     ValidationError,
     VersionConflictError,
 )
+from kanbaroo_core.services.pagination import (
+    DEFAULT_PAGE_LIMIT as DEFAULT_PAGE_LIMIT,
+)
+from kanbaroo_core.services.pagination import (
+    MAX_PAGE_LIMIT as MAX_PAGE_LIMIT,
+)
+from kanbaroo_core.services.pagination import (
+    clamp_limit,
+    decode_cursor,
+    encode_cursor,
+)
 from kanbaroo_core.text import normalize_for_comparison
 from kanbaroo_core.time import utc_now_iso
-
-DEFAULT_PAGE_LIMIT = 50
-MAX_PAGE_LIMIT = 200
-
 
 _ALLOWED_TRANSITIONS: dict[StoryState, frozenset[StoryState]] = {
     StoryState.BACKLOG: frozenset({StoryState.TODO}),
@@ -87,26 +93,6 @@ def _dump(story: Story) -> dict[str, Any]:
     audit log.
     """
     return StoryRead.model_validate(story).model_dump(mode="json")
-
-
-def _encode_cursor(story_id: str) -> str:
-    """
-    Encode a story id as an opaque URL-safe cursor.
-    """
-    return base64.urlsafe_b64encode(story_id.encode("utf-8")).decode("ascii")
-
-
-def _decode_cursor(cursor: str) -> str:
-    """
-    Decode a cursor back into the story id it wraps.
-
-    Raises :class:`ValidationError` if the cursor is not valid base64
-    URL-safe data; this translates to a 400 at the API layer.
-    """
-    try:
-        return base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise ValidationError("cursor", "malformed cursor value") from exc
 
 
 def _verify_epic_in_workspace(
@@ -225,10 +211,7 @@ def list_stories(
     to the workspace, so a tag named ``bug`` in one workspace does not
     match a differently-workspaced tag of the same name.
     """
-    if limit < 1:
-        limit = 1
-    if limit > MAX_PAGE_LIMIT:
-        limit = MAX_PAGE_LIMIT
+    limit = clamp_limit(limit)
 
     stmt = select(Story).where(Story.workspace_id == workspace_id).order_by(Story.id)
     if state is not None:
@@ -250,14 +233,14 @@ def list_stories(
     if not include_deleted:
         stmt = live(stmt, Story)
     if cursor is not None:
-        stmt = stmt.where(Story.id > _decode_cursor(cursor))
+        stmt = stmt.where(Story.id > decode_cursor(cursor))
     stmt = stmt.limit(limit + 1)
 
     rows = list(session.execute(stmt).scalars().all())
     next_cursor: str | None = None
     if len(rows) > limit:
         rows = rows[:limit]
-        next_cursor = _encode_cursor(rows[-1].id)
+        next_cursor = encode_cursor(rows[-1].id)
     return rows, next_cursor
 
 

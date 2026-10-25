@@ -27,6 +27,7 @@ from kanbaroo_core.actor import Actor
 from kanbaroo_core.enums import AuditAction, AuditEntityType
 from kanbaroo_core.models.comment import Comment
 from kanbaroo_core.models.story import Story
+from kanbaroo_core.models.workspace import Workspace
 from kanbaroo_core.queries import live
 from kanbaroo_core.schemas.comment import CommentCreate, CommentRead, CommentUpdate
 from kanbaroo_core.services.audit import emit_audit
@@ -35,6 +36,17 @@ from kanbaroo_core.services.exceptions import (
     NotFoundError,
     ValidationError,
     VersionConflictError,
+)
+from kanbaroo_core.services.pagination import (
+    DEFAULT_PAGE_LIMIT as DEFAULT_PAGE_LIMIT,
+)
+from kanbaroo_core.services.pagination import (
+    MAX_PAGE_LIMIT as MAX_PAGE_LIMIT,
+)
+from kanbaroo_core.services.pagination import (
+    clamp_limit,
+    decode_cursor,
+    encode_cursor,
 )
 from kanbaroo_core.time import utc_now_iso
 
@@ -160,6 +172,55 @@ def list_comments(
     if not include_deleted:
         stmt = live(stmt, Comment)
     return list(session.execute(stmt).scalars().all())
+
+
+def list_workspace_comments(
+    session: Session,
+    *,
+    workspace_id: str,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_LIMIT,
+) -> tuple[list[Comment], str | None]:
+    """
+    Return a page of live comments across every live story in
+    ``workspace_id`` plus a cursor for the next page.
+
+    This is the bulk read behind ``GET /workspaces/{id}/comments``:
+    clients that index comment text for search (the TUI's ``/``
+    overlay) walk it instead of issuing one ``/stories/{id}/comments``
+    request per story. Rows are ordered by comment id (UUID v7, so
+    roughly chronological) and paginated with the same opaque cursor
+    scheme and limits as :func:`~kanbaroo_core.services.stories.list_stories`.
+
+    Soft-deleted comments and comments on soft-deleted stories are
+    excluded; there is no ``include_deleted`` switch because the only
+    consumer is a search index that must not surface archived content.
+    Raises :class:`NotFoundError` when the workspace is unknown or
+    soft-deleted so callers can distinguish "no comments" from "no such
+    workspace".
+    """
+    workspace = session.get(Workspace, workspace_id)
+    if workspace is None or workspace.deleted_at is not None:
+        raise NotFoundError("workspace", workspace_id)
+
+    limit = clamp_limit(limit)
+    stmt = (
+        select(Comment)
+        .join(Story, Story.id == Comment.story_id)
+        .where(Story.workspace_id == workspace_id)
+        .order_by(Comment.id)
+    )
+    stmt = live(stmt, Comment, Story)
+    if cursor is not None:
+        stmt = stmt.where(Comment.id > decode_cursor(cursor))
+    stmt = stmt.limit(limit + 1)
+
+    rows = list(session.execute(stmt).scalars().all())
+    next_cursor: str | None = None
+    if len(rows) > limit:
+        rows = rows[:limit]
+        next_cursor = encode_cursor(rows[-1].id)
+    return rows, next_cursor
 
 
 def get_comment(

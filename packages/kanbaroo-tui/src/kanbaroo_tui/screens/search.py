@@ -1,140 +1,138 @@
 """
 Global fuzzy search overlay (milestone 14).
 
-Pressed from the workspace list or the board with ``/``. The screen
-builds (lazily, on first open and cached for the rest of the session)
-a client-side index of every visible story: (human_id, title, first
-200 chars of description, concatenated comment bodies, workspace_key,
-state, id). Typing in the input narrows the result table live;
-``enter`` opens the story detail for the highlighted row.
+Pressed from any screen with ``/``. The screen is a thin view over
+the app-owned :class:`~kanbaroo_tui.search_index.SearchIndex`, which
+lives for the whole session: opening search with a warm index renders
+results immediately and issues zero HTTP requests. If the index has
+never been built, or a ``story.*`` / ``comment.*`` WebSocket event
+marked it stale, the screen renders whatever is cached and asks the
+app to refresh in the background; each build phase (stories, then
+comments) re-ranks the table against the current query as it lands.
+The hint line under the input says which phase is running.
+
+The input is focused the moment the screen mounts; nothing in
+``on_mount`` waits on the network.
 
 Ranking
 -------
 
 We deliberately avoid a hard runtime dependency on ``rapidfuzz``:
-``difflib.SequenceMatcher`` from the standard library is more than
-fast enough for the scale phase 1 targets (low thousands of stories,
-local workspace). The scorer computes a weighted ratio over four
-fields:
+``difflib.SequenceMatcher`` from the standard library is fast enough
+for the short fields it is applied to. Every searchable field is
+lowercased once at index time. The scorer blends:
 
-* ``human_id``   weight 0.35 (case-folded; exact and prefix matches
-  earn a large bonus so typing ``KAN-12`` scrolls directly to that
-  story).
-* ``title``      weight 0.35
-* ``description`` weight 0.15 (only the first 200 chars are indexed
-  to keep scoring cheap on long descriptions).
-* ``comments``   weight 0.15 (concatenated comment bodies, capped to
-  500 chars total; surfaces hits whose only signal lives in a
-  comment thread).
+* ``human_id``   fuzzy ratio, weight 0.35, plus a large bonus for a
+  prefix match. An exact match of the stripped, case-folded query
+  against the human id is ranked ahead of every other entry outright,
+  independent of score, so typing ``KAN-2`` always lands on ``KAN-2``
+  rather than on ``KAN-24`` or on a story whose description quotes
+  ``KAN-2`` (scores are capped at 1.0, so the bonuses alone cannot
+  guarantee that).
+* ``title``      fuzzy ratio, weight 0.35, with the same prefix and
+  substring bonuses.
+* ``description`` plain substring check on the first 200 chars;
+  contributes a fixed weight when the query appears.
+* ``comments``   plain substring check on the concatenated comment
+  bodies (capped to 500 chars per story); fixed weight on a hit, which
+  is what surfaces stories whose only signal lives in a comment thread.
+
+Running ``SequenceMatcher`` over the long description and comment
+blobs on every keystroke was the expensive part of the old scorer and
+gave a weak fuzzy signal anyway; substring checks are both cheaper
+and more predictable for those fields.
 
 A score under ``MIN_SCORE`` is dropped so the table never drowns the
 user in irrelevant hits; an empty query shows the first N rows in the
 index's insertion order, matching the spec's "no-input" landing.
-
-Live updates
-------------
-
-Any ``story.*`` or ``comment.*`` WS event invalidates the cached
-index so the next open rebuilds from fresh data. Rebuilding in place
-while the screen is open would risk racing with the user's current
-query; the cost of a full refresh on re-entry is tiny (one paginated
-fetch per workspace plus one comment fetch per story) and the code
-is dramatically simpler. The comment fetch is per-story which is
-quadratic in storyset growth; at single-user scale that's fine, and
-a future revision can fold comments into the story-list response
-once the spec adds the field.
+Re-ranking is debounced by a short timer that resets on every
+keystroke; ``enter`` flushes any pending re-rank first so the row the
+user opens always reflects what they typed.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.screen import Screen
+from textual.timer import Timer
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
-from kanbaroo_tui.client import ApiError
 from kanbaroo_tui.messages import StorySelected
+from kanbaroo_tui.search_index import IndexedStory, IndexPhase, SearchIndex
+
+__all__ = ["IndexedStory", "SearchScreen", "MAX_VISIBLE_RESULTS", "MIN_SCORE"]
 
 MAX_VISIBLE_RESULTS = 50
 MIN_SCORE = 0.15
-DESCRIPTION_PREFIX_LENGTH = 200
-COMMENTS_PREFIX_LENGTH = 500
+RERANK_DEBOUNCE_SECONDS = 0.1
 
 WEIGHT_HUMAN_ID = 0.35
 WEIGHT_TITLE = 0.35
-WEIGHT_DESCRIPTION = 0.15
-WEIGHT_COMMENTS = 0.15
+WEIGHT_DESCRIPTION = 0.2
+WEIGHT_COMMENTS = 0.25
 PREFIX_BONUS = 0.35
-
-STORY_EVENT_PREFIX = "story."
-COMMENT_EVENT_PREFIX = "comment."
-
-
-@dataclass
-class IndexedStory:
-    """
-    One entry in the search index.
-
-    Cached per story so scoring never re-walks the dict keys; the
-    workspace key is resolved once on index build.
-    """
-
-    id: str
-    human_id: str
-    title: str
-    workspace_key: str
-    state: str
-    description_prefix: str
-    comments_blob: str
-    story: dict[str, Any]
+SUBSTRING_BONUS = 0.2
 
 
 def _score(query: str, entry: IndexedStory) -> float:
     """
     Return the ranked score for ``entry`` against ``query``.
 
-    Blends a weighted average of human_id, title, description, and
-    comments similarity with a prefix-match bonus. Case-folded
-    everywhere so the user never has to match casing to find anything.
-    Returns 0 for any entry missing all four fields, which cannot
-    happen in normal operation but keeps the scorer well-defined.
+    Fuzzy-matches the two short fields (human id, title), adds fixed
+    weights for substring hits in the description and comment blobs,
+    and layers the prefix and substring bonuses on top. Case-folded
+    everywhere via the entry's precomputed lowercase fields so the
+    user never has to match casing to find anything.
     """
     q = query.strip().lower()
     if not q:
         return 1.0
-    id_ratio = SequenceMatcher(None, q, entry.human_id.lower()).ratio()
-    title_ratio = SequenceMatcher(None, q, entry.title.lower()).ratio()
-    desc_ratio = SequenceMatcher(None, q, entry.description_prefix.lower()).ratio()
-    comments_ratio = SequenceMatcher(None, q, entry.comments_blob.lower()).ratio()
-    total = (
-        WEIGHT_HUMAN_ID * id_ratio
-        + WEIGHT_TITLE * title_ratio
-        + WEIGHT_DESCRIPTION * desc_ratio
-        + WEIGHT_COMMENTS * comments_ratio
-    )
-    if entry.human_id.lower().startswith(q) or entry.title.lower().startswith(q):
-        total = min(1.0, total + PREFIX_BONUS)
-    if q in entry.human_id.lower() or q in entry.title.lower():
-        total = min(1.0, total + 0.2)
-    if q in entry.comments_blob.lower():
-        total = min(1.0, total + 0.1)
-    return total
+    total = WEIGHT_HUMAN_ID * SequenceMatcher(None, q, entry.human_id_lower).ratio()
+    total += WEIGHT_TITLE * SequenceMatcher(None, q, entry.title_lower).ratio()
+    if q in entry.description_lower:
+        total += WEIGHT_DESCRIPTION
+    if q in entry.comments_lower:
+        total += WEIGHT_COMMENTS
+    if entry.human_id_lower.startswith(q) or entry.title_lower.startswith(q):
+        total += PREFIX_BONUS
+    if q in entry.human_id_lower or q in entry.title_lower:
+        total += SUBSTRING_BONUS
+    return min(1.0, total)
+
+
+def rank_entries(query: str, entries: list[IndexedStory]) -> list[IndexedStory]:
+    """
+    Rank ``entries`` against ``query``, dropping anything under
+    :data:`MIN_SCORE` and capping at :data:`MAX_VISIBLE_RESULTS`.
+
+    Entries whose human id exactly equals the stripped, case-folded
+    query sort ahead of everything else; the rest sort by score. An
+    empty query returns the leading entries in index order.
+    """
+    q = query.strip().lower()
+    if not q:
+        return list(entries)[:MAX_VISIBLE_RESULTS]
+    scored = [
+        (entry.human_id_lower == q, _score(query, entry), entry) for entry in entries
+    ]
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [entry for exact, score, entry in scored if exact or score >= MIN_SCORE][
+        :MAX_VISIBLE_RESULTS
+    ]
 
 
 class SearchScreen(Screen[None]):
     """
     Full-screen fuzzy-search overlay.
 
-    Owns the search input, the result table, and the shared index.
-    The index is rebuilt on mount (or when invalidated by a
-    ``story.*`` WS event) from ``/workspaces`` and
-    ``/workspaces/{id}/stories``; every workspace contributes its own
-    stories so search is genuinely global.
+    Owns the search input and the result table. The index itself is
+    owned by the app (``app.search_index``); the screen subscribes to
+    its phase notifications while mounted and re-ranks on each one.
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -164,13 +162,16 @@ class SearchScreen(Screen[None]):
 
     def __init__(self) -> None:
         """
-        Build an empty search screen. The index and results are
-        populated on :meth:`on_mount`.
+        Build an empty search screen. The index is resolved from the
+        app on :meth:`on_mount`.
         """
         super().__init__()
-        self._index: list[IndexedStory] = []
+        self._index: SearchIndex | None = None
         self._ranked: list[IndexedStory] = []
         self._last_query: str = ""
+        self._pending_query: str | None = None
+        self._rerank_timer: Timer | None = None
+        self._hint_text_value: str = "0 results"
 
     def compose(self) -> ComposeResult:
         """
@@ -178,17 +179,14 @@ class SearchScreen(Screen[None]):
         """
         yield Header()
         yield Input(placeholder="type to search (enter to open)...", id="search-input")
-        yield Static(
-            "0 results (building index)",
-            id="search-hint",
-            classes="search-hint",
-        )
+        yield Static("0 results", id="search-hint", classes="search-hint")
         yield Vertical(id="search-body")
         yield Footer()
 
     async def on_mount(self) -> None:
         """
-        Build the table, subscribe to WS events, populate the index.
+        Mount the table, focus the input, render the cached index, and
+        request a background refresh if the cache is cold or stale.
         """
         self.sub_title = "Search"
         body = self.query_one("#search-body", Vertical)
@@ -197,138 +195,72 @@ class SearchScreen(Screen[None]):
         )
         table.add_columns("KEY", "TITLE", "WORKSPACE", "STATE")
         await body.mount(table)
-        self.app.register_ws_listener(self)  # type: ignore[attr-defined]
-        await self._build_index()
-        self._rank_and_render("")
         self.query_one("#search-input", Input).focus()
+        index: SearchIndex = self.app.search_index  # type: ignore[attr-defined]
+        self._index = index
+        index.add_listener(self._on_index_updated)
+        self._rank_and_render("")
+        if index.stale or not index.built:
+            self.app.request_search_index_refresh()  # type: ignore[attr-defined]
 
     def on_unmount(self) -> None:
         """
-        Deregister the WS listener.
+        Unsubscribe from index notifications and drop any pending
+        re-rank timer.
         """
-        self.app.unregister_ws_listener(self)  # type: ignore[attr-defined]
+        if self._index is not None:
+            self._index.remove_listener(self._on_index_updated)
+        if self._rerank_timer is not None:
+            self._rerank_timer.stop()
+            self._rerank_timer = None
 
-    async def _build_index(self) -> None:
+    def _on_index_updated(self) -> None:
         """
-        Walk every workspace and build the client-side index.
+        Index phase callback: apply any pending keystrokes, then re-rank
+        the current query against the refreshed entries.
 
-        Each workspace contributes a fresh page-walk through
-        ``/workspaces/{id}/stories`` plus one
-        ``/stories/{id}/comments`` call per story so comment bodies
-        are searchable too. The cost is roughly O(workspaces *
-        stories * comments_per_story) HTTP calls; at single-user
-        scale that's fine, and a failure on any individual story's
-        comment fetch degrades gracefully (the entry indexes with no
-        comment text). A failure on a whole workspace skips that
-        workspace and logs a notification.
+        No mounted-state guard: :meth:`on_unmount` removes this listener,
+        and a build can finish while the screen is still inside its own
+        mount handling (Textual reports ``is_mounted`` false there), so
+        gating on it would drop the very notification that fills the
+        table on first open.
         """
-        client = self.app.client  # type: ignore[attr-defined]
+        self.flush_pending_rerank()
+        self._rank_and_render(self._last_query, preserve_cursor=True)
+
+    def _highlighted_story_id(self, table: DataTable[str]) -> str | None:
+        """
+        Return the row key (story id) under the table cursor, or
+        ``None`` when the table is empty.
+        """
+        if table.row_count == 0:
+            return None
         try:
-            workspace_response = await client.get("/workspaces", params={"limit": 200})
-        except ApiError as exc:
-            self.notify(f"search index failed: {exc}", severity="error")
-            self._index = []
-            return
-        workspaces = list(workspace_response.json().get("items", []))
-        index: list[IndexedStory] = []
-        for workspace in workspaces:
-            workspace_id = str(workspace.get("id", ""))
-            workspace_key = str(workspace.get("key", ""))
-            try:
-                stories = await self._fetch_stories(client, workspace_id)
-            except ApiError as exc:
-                self.notify(
-                    f"search: skipped {workspace_key}: {exc}", severity="warning"
-                )
-                continue
-            for story in stories:
-                description = (story.get("description") or "")[
-                    :DESCRIPTION_PREFIX_LENGTH
-                ]
-                story_id = str(story.get("id", ""))
-                comments_blob = await self._fetch_comments_blob(client, story_id)
-                index.append(
-                    IndexedStory(
-                        id=story_id,
-                        human_id=str(story.get("human_id", "")),
-                        title=str(story.get("title", "")),
-                        workspace_key=workspace_key,
-                        state=str(story.get("state", "")),
-                        description_prefix=description,
-                        comments_blob=comments_blob,
-                        story=story,
-                    )
-                )
-        self._index = index
+            cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        except Exception:  # noqa: BLE001
+            return None
+        value = cell_key.row_key.value
+        return str(value) if value is not None else None
 
-    async def _fetch_comments_blob(self, client: Any, story_id: str) -> str:
-        """
-        Return concatenated comment bodies for ``story_id``, capped to
-        :data:`COMMENTS_PREFIX_LENGTH` characters.
-
-        Failures fall back to an empty string so a single bad story
-        does not poison the whole index. Callers indexing many
-        stories therefore degrade gracefully rather than raising.
-        """
-        if not story_id:
-            return ""
-        try:
-            response = await client.get(f"/stories/{story_id}/comments")
-        except ApiError:
-            return ""
-        items = response.json().get("items") or []
-        bodies: list[str] = []
-        for comment in items:
-            if not isinstance(comment, dict):
-                continue
-            body = comment.get("body")
-            if isinstance(body, str) and body:
-                bodies.append(body)
-        joined = "\n".join(bodies)
-        return joined[:COMMENTS_PREFIX_LENGTH]
-
-    async def _fetch_stories(
-        self,
-        client: Any,
-        workspace_id: str,
-    ) -> list[dict[str, Any]]:
-        """
-        Walk a single workspace's stories endpoint cursor-paginated.
-        """
-        items: list[dict[str, Any]] = []
-        cursor: str | None = None
-        while True:
-            params: dict[str, Any] = {"limit": 200}
-            if cursor is not None:
-                params["cursor"] = cursor
-            response = await client.get(
-                f"/workspaces/{workspace_id}/stories",
-                params=params,
-            )
-            body = response.json()
-            items.extend(body.get("items", []))
-            cursor = body.get("next_cursor")
-            if cursor is None:
-                break
-        return items
-
-    def _rank_and_render(self, query: str) -> None:
+    def _rank_and_render(self, query: str, *, preserve_cursor: bool = False) -> None:
         """
         Rank the index against ``query`` and rebuild the result table.
+
+        ``preserve_cursor`` is set for re-renders caused by an index
+        update (same query the user is already looking at). Background
+        refreshes fire several notifications per build and each table
+        rebuild would otherwise reset the cursor to row 0, so the
+        highlighted story is captured first and the cursor moved back
+        to it if it is still in the ranked list. Re-ranking for a new
+        query leaves the cursor at the top, which is the expected
+        "best match first" behavior.
         """
         self._last_query = query
-        if not query:
-            ranked = list(self._index)[:MAX_VISIBLE_RESULTS]
-        else:
-            scored: list[tuple[float, IndexedStory]] = [
-                (_score(query, entry), entry) for entry in self._index
-            ]
-            scored.sort(key=lambda pair: pair[0], reverse=True)
-            ranked = [entry for score, entry in scored if score >= MIN_SCORE][
-                :MAX_VISIBLE_RESULTS
-            ]
+        entries = self._index.entries if self._index is not None else []
+        ranked = rank_entries(query, entries)
         self._ranked = ranked
-        table = self.query_one("#search-table", DataTable)
+        table: DataTable[str] = self.query_one("#search-table", DataTable)
+        highlighted = self._highlighted_story_id(table) if preserve_cursor else None
         table.clear()
         for entry in ranked:
             table.add_row(
@@ -338,32 +270,73 @@ class SearchScreen(Screen[None]):
                 entry.state,
                 key=entry.id,
             )
-        hint = self.query_one("#search-hint", Static)
-        hint.update(
-            f"{len(ranked)} result{'s' if len(ranked) != 1 else ''} "
-            f"(index: {len(self._index)} stories)"
-        )
+        if highlighted is not None:
+            row = next(
+                (i for i, entry in enumerate(ranked) if entry.id == highlighted),
+                None,
+            )
+            if row is not None:
+                table.move_cursor(row=row)
+        self._hint_text_value = self._hint_text(len(ranked), len(entries))
+        self.query_one("#search-hint", Static).update(self._hint_text_value)
+
+    def _hint_text(self, result_count: int, index_size: int) -> str:
+        """
+        Build the status line under the input, reflecting build phase.
+        """
+        base = f"{result_count} result{'s' if result_count != 1 else ''}"
+        index = self._index
+        if index is None or not index.built:
+            return f"{base} (indexing stories...)"
+        detail = f"index: {index_size} stories"
+        if index.phase == IndexPhase.STORIES:
+            detail += ", refreshing..."
+        elif index.phase == IndexPhase.COMMENTS:
+            detail += ", indexing comments..."
+        return f"{base} ({detail})"
 
     async def on_input_changed(self, message: Input.Changed) -> None:
         """
-        Re-rank on every keystroke in the search input.
+        Record the new query and (re)start the debounce timer.
         """
         if message.input.id != "search-input":
             return
-        self._rank_and_render(message.value)
+        self._pending_query = message.value
+        if self._rerank_timer is not None:
+            self._rerank_timer.stop()
+        self._rerank_timer = self.set_timer(
+            RERANK_DEBOUNCE_SECONDS, self._on_rerank_timer
+        )
+
+    def _on_rerank_timer(self) -> None:
+        self._rerank_timer = None
+        self.flush_pending_rerank()
+
+    def flush_pending_rerank(self) -> None:
+        """
+        Apply any keystrokes the debounce timer has not yet flushed.
+
+        Called before acting on ``enter`` so the highlighted row always
+        corresponds to the typed query, and by tests that want
+        deterministic ranking without waiting on the timer.
+        """
+        if self._rerank_timer is not None:
+            self._rerank_timer.stop()
+            self._rerank_timer = None
+        if self._pending_query is None:
+            return
+        query = self._pending_query
+        self._pending_query = None
+        self._rank_and_render(query)
 
     async def action_open_selected(self) -> None:
         """
         Open the story detail for the highlighted row.
         """
+        self.flush_pending_rerank()
         if not self._ranked:
             return
-        table = self.query_one("#search-table", DataTable)
-        try:
-            cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        except Exception:  # noqa: BLE001
-            return
-        row_key = cell_key.row_key.value
+        row_key = self._highlighted_story_id(self.query_one("#search-table", DataTable))
         if row_key is None:
             return
         story = next(
@@ -393,26 +366,12 @@ class SearchScreen(Screen[None]):
         """
         self.app.pop_screen()
 
-    async def handle_ws_event(self, event: dict[str, Any]) -> None:
-        """
-        Rebuild the index on any ``story.*`` or ``comment.*`` event so
-        live changes show up in subsequent searches.
-        """
-        event_type = str(event.get("event_type", ""))
-        if not (
-            event_type.startswith(STORY_EVENT_PREFIX)
-            or event_type.startswith(COMMENT_EVENT_PREFIX)
-        ):
-            return
-        await self._build_index()
-        self._rank_and_render(self._last_query)
-
     @property
     def index(self) -> list[IndexedStory]:
         """
-        Return a copy of the current index (for tests).
+        Return a copy of the current index entries (for tests).
         """
-        return list(self._index)
+        return self._index.entries if self._index is not None else []
 
     @property
     def ranked(self) -> list[IndexedStory]:
@@ -420,3 +379,10 @@ class SearchScreen(Screen[None]):
         Return the current ranked result list (for tests).
         """
         return list(self._ranked)
+
+    @property
+    def hint_text(self) -> str:
+        """
+        Return the current hint line text (for tests).
+        """
+        return self._hint_text_value

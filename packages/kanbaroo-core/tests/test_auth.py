@@ -7,11 +7,14 @@ never again observable from the database; only its hash is. These tests
 exercise that contract directly.
 """
 
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from kanbaroo_core import ActorType
 from kanbaroo_core.auth import (
+    LAST_USED_AT_REFRESH_SECONDS,
     TOKEN_PREFIX,
     create_token,
     generate_token_plaintext,
@@ -174,3 +177,103 @@ def test_hash_is_stable_and_deterministic() -> None:
     """
     assert hash_token("kbr_abc") == hash_token("kbr_abc")
     assert hash_token("kbr_abc") != hash_token("kbr_def")
+
+
+def _frozen(seconds_offset: int = 0) -> datetime:
+    """
+    Return a fixed aware UTC datetime offset by ``seconds_offset``.
+    """
+    return datetime(2026, 10, 25, 12, 0, 0, tzinfo=UTC) + timedelta(
+        seconds=seconds_offset
+    )
+
+
+def test_validate_first_use_stamps_last_used_at_from_now(session: Session) -> None:
+    """
+    A token with ``last_used_at IS NULL`` is stamped with the injected
+    clock on first successful validation.
+    """
+    row, plaintext = create_token(
+        session,
+        actor_type=ActorType.HUMAN,
+        actor_id="adam",
+        name="personal",
+    )
+    session.commit()
+
+    assert validate_token(session, plaintext, now=_frozen()) is not None
+    session.commit()
+    session.refresh(row)
+    assert row.last_used_at == "2026-10-25T12:00:00Z"
+
+
+def test_validate_within_window_does_not_rewrite_last_used_at(
+    session: Session,
+) -> None:
+    """
+    A second validation inside :data:`LAST_USED_AT_REFRESH_SECONDS`
+    leaves the stored value untouched and leaves the session clean (no
+    pending UPDATE), so a burst of reads stays read-only.
+    """
+    row, plaintext = create_token(
+        session,
+        actor_type=ActorType.HUMAN,
+        actor_id="adam",
+        name="personal",
+    )
+    session.commit()
+    validate_token(session, plaintext, now=_frozen())
+    session.commit()
+
+    again = validate_token(
+        session, plaintext, now=_frozen(LAST_USED_AT_REFRESH_SECONDS - 1)
+    )
+
+    assert again is not None
+    assert not session.dirty
+    assert not session.is_modified(row)
+    session.commit()
+    session.refresh(row)
+    assert row.last_used_at == "2026-10-25T12:00:00Z"
+
+
+def test_validate_after_window_stamps_again(session: Session) -> None:
+    """
+    Once the stored stamp is at least the refresh window old, the next
+    validation rewrites it.
+    """
+    row, plaintext = create_token(
+        session,
+        actor_type=ActorType.HUMAN,
+        actor_id="adam",
+        name="personal",
+    )
+    session.commit()
+    validate_token(session, plaintext, now=_frozen())
+    session.commit()
+
+    validate_token(session, plaintext, now=_frozen(LAST_USED_AT_REFRESH_SECONDS))
+    assert session.is_modified(row)
+    session.commit()
+    session.refresh(row)
+    assert row.last_used_at == "2026-10-25T12:01:00Z"
+
+
+def test_validate_unparseable_last_used_at_is_refreshed(session: Session) -> None:
+    """
+    A corrupted stored value counts as stale and is overwritten rather
+    than raising.
+    """
+    row, plaintext = create_token(
+        session,
+        actor_type=ActorType.HUMAN,
+        actor_id="adam",
+        name="personal",
+    )
+    row.last_used_at = "yesterday-ish"
+    session.commit()
+
+    validate_token(session, plaintext, now=_frozen())
+    session.commit()
+    session.refresh(row)
+    assert row.last_used_at == "2026-10-25T12:00:00Z"

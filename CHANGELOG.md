@@ -4,6 +4,40 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/v1/workspaces/{id}/comments`: paginated, read-only bulk
+  list of live comments across every live story in a workspace
+  (`cursor` and `limit` as on the story list; 404 for an unknown or
+  soft-deleted workspace). Exists so clients that index comment text
+  can fetch a whole workspace in a few requests instead of one per
+  story.
+
+### Changed
+
+- TUI global search (`/`) is now fast to open and to type in. The
+  index lives on the app for the whole session instead of being
+  rebuilt on every open, so reopening search renders instantly with
+  zero HTTP requests. The build runs in the background in two phases
+  (stories first, then comments) and the input has focus immediately;
+  the hint line says "indexing stories..." or "indexing comments..."
+  while a phase runs. Comment indexing uses the new bulk endpoint
+  (paginated, 200 per page). `story.*` and `comment.*` WebSocket
+  events mark the index stale and trigger one debounced background
+  rebuild about a second after the last event, never two at once.
+  Ranking precomputes lowercased fields, keeps fuzzy matching for the
+  short human id and title fields, uses plain substring checks for
+  description and comment text, and debounces re-ranking by 100 ms
+  per keystroke (`enter` still opens the row matching what you
+  typed). The fast path for comment indexing requires server v0.5.0
+  or later; older servers still work via the per-story fallback,
+  which the TUI detects once per session.
+- Token validation now refreshes `api_tokens.last_used_at` at most
+  once every 60 seconds per token instead of on every request. Every
+  authenticated GET used to open a write transaction, which on SQLite
+  serialized concurrent reads. No migration; the column and its
+  meaning are unchanged apart from the coarser refresh.
+
 ## [0.4.0] - 2026-10-20
 
 ### Added
