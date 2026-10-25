@@ -4,6 +4,14 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-25
+
+Upgrade notes: no database migration. Rebuild the server container
+(`docker compose up -d --build`) to get the new comments endpoint;
+reinstall the clients (`pipx install --include-deps --force
+'kanbaroo[all]==0.5.0'`) to get the faster TUI search and the
+`kanbaroo-mcp` startup fix.
+
 ### Added
 
 - `GET /api/v1/workspaces/{id}/comments`: paginated, read-only bulk
@@ -29,14 +37,27 @@ All notable changes to Kanbaroo are recorded here. This project follows [Semanti
   short human id and title fields, uses plain substring checks for
   description and comment text, and debounces re-ranking by 100 ms
   per keystroke (`enter` still opens the row matching what you
-  typed). The fast path for comment indexing requires server v0.5.0
-  or later; older servers still work via the per-story fallback,
-  which the TUI detects once per session.
+  typed). An exact human id match (typing `KAN-2`) always ranks
+  first, even when other stories mention that id. Background
+  refreshes keep the cursor on the story you highlighted. The fast
+  path for comment indexing requires server v0.5.0 or later; older
+  servers still work via the per-story fallback, which the TUI
+  detects once per session.
 - Token validation now refreshes `api_tokens.last_used_at` at most
   once every 60 seconds per token instead of on every request. Every
   authenticated GET used to open a write transaction, which on SQLite
   serialized concurrent reads. No migration; the column and its
   meaning are unchanged apart from the coarser refresh.
+
+### Fixed
+
+- `kanbaroo-mcp` crashed on startup with `AttributeError: 'Server'
+  object has no attribute 'list_tools'` on fresh installs. Its
+  dependency was declared as `mcp>=1.0`, so pip resolved the MCP SDK
+  to 2.x, which removed that API. The dependency is now `mcp>=1.0,<2`.
+  Existing v0.4.0 pipx installs can apply the same fix without
+  upgrading: `pipx runpip kanbaroo install 'mcp>=1.0,<2'`, then
+  reconnect the MCP server in your client.
 
 ## [0.4.0] - 2026-10-20
 
